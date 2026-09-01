@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/e2b-dev/infra/packages/api/internal/api"
 	"github.com/e2b-dev/infra/packages/api/internal/sandbox"
@@ -60,13 +61,40 @@ func (o *Orchestrator) KeepAliveFor(ctx context.Context, teamID uuid.UUID, sandb
 	err = o.UpdateSandbox(ctx, sandboxID, sbx.EndTime, sbx.ClusterID, sbx.NodeID)
 	if err != nil {
 		if errors.Is(err, ErrSandboxNotFound) {
-			return nil, &api.APIError{Code: http.StatusNotFound, ClientMsg: utils.SandboxNotFoundMsg(sandboxID), Err: err}
+			o.removeStaleSandboxRecord(ctx, teamID, sbx)
+			return nil, &api.APIError{Code: http.StatusNotFound, ClientMsg: utils.SandboxNotFoundMsg(sandboxID), Err: errors.Join(sandbox.ErrNotFound, err)}
 		}
 
 		return nil, &api.APIError{Code: http.StatusInternalServerError, ClientMsg: "Error when setting sandbox timeout", Err: err}
 	}
 
 	return &sbx, nil
+}
+
+func (o *Orchestrator) removeStaleSandboxRecord(ctx context.Context, teamID uuid.UUID, sbx sandbox.Sandbox) {
+	cleanupCtx := context.WithoutCancel(ctx)
+
+	logger.L().Warn(
+		ctx,
+		"removing stale sandbox store record after node reported sandbox missing",
+		logger.WithSandboxID(sbx.SandboxID),
+		logger.WithNodeID(sbx.NodeID),
+	)
+
+	o.sandboxStore.Remove(cleanupCtx, teamID, sbx.SandboxID)
+
+	if o.routingCatalog == nil {
+		return
+	}
+
+	if err := o.routingCatalog.DeleteSandbox(cleanupCtx, sbx.SandboxID, sbx.ExecutionID); err != nil {
+		logger.L().Warn(
+			ctx,
+			"failed to remove stale sandbox routing record",
+			logger.WithSandboxID(sbx.SandboxID),
+			zap.Error(err),
+		)
+	}
 }
 
 // getMaxAllowedTTL calculates the maximum allowed TTL for a sandbox without exceeding its max instance length.
