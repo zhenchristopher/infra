@@ -185,6 +185,11 @@ variable "gcp_project_id" {
   type = string
 }
 
+variable "enable_gcp_telemetry_metrics" {
+  description = "Whether the Nomad service account may write metrics to Google Cloud Monitoring."
+  type        = bool
+}
+
 variable "gcp_region" {
   type = string
 }

@@ -71,6 +71,8 @@ resource "google_project_iam_member" "network_viewer" {
 }
 
 resource "google_project_iam_member" "monitoring_editor" {
+  count = var.enable_gcp_telemetry_metrics ? 1 : 0
+
   project = var.gcp_project_id
   member  = "serviceAccount:${var.google_service_account_email}"
   role    = "roles/monitoring.editor"

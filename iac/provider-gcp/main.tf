@@ -282,6 +282,7 @@ module "cluster" {
   gcp_region                       = var.gcp_region
   gcp_zone                         = var.gcp_zone
   google_service_account_key       = module.init.google_service_account_key
+  enable_gcp_telemetry_metrics     = var.enable_gcp_telemetry_metrics
   network_name                     = var.network_name
 
   build_clusters_config  = var.build_clusters_config
