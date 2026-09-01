@@ -80,3 +80,16 @@ func TestAllContextsIncludesRegisteredProviders(t *testing.T) {
 
 	require.Equal(t, "node-1", seen["node"])
 }
+
+func TestSafetyBoolEnvironmentOverrides(t *testing.T) {
+	client := &Client{}
+
+	t.Setenv(hybridPlacementOverrideEnv, "true")
+	require.True(t, client.BoolFlag(t.Context(), HybridPlacementFlag))
+
+	t.Setenv(hybridPlacementOverrideEnv, "invalid")
+	require.False(t, client.BoolFlag(t.Context(), HybridPlacementFlag))
+
+	t.Setenv(hostAdmissionOverrideEnv, "false")
+	require.False(t, client.BoolFlag(t.Context(), HostAdmissionFlag))
+}
