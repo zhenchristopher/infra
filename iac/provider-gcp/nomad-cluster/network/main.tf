@@ -370,7 +370,8 @@ resource "google_compute_backend_service" "h2c" {
   security_policy = google_compute_security_policy.default[each.key].self_link
 
   log_config {
-    enable = var.environment != "dev"
+    enable      = true
+    sample_rate = 1.0
   }
 
   dynamic "backend" {
@@ -403,7 +404,8 @@ resource "google_compute_backend_service" "default" {
   security_policy = google_compute_security_policy.default[each.key].self_link
 
   log_config {
-    enable = var.environment != "dev"
+    enable      = true
+    sample_rate = 1.0
   }
 
   dynamic "backend" {
@@ -560,12 +562,8 @@ resource "google_compute_firewall" "remote_connection_firewall_ingress" {
   }
 
 
-  #  Metadata fields can be found here: https://cloud.google.com/firewall/docs/firewall-rules-logging#log-format
-  dynamic "log_config" {
-    for_each = var.private_nodes_enabled || var.environment != "dev" ? [1] : []
-    content {
-      metadata = "EXCLUDE_ALL_METADATA"
-    }
+  log_config {
+    metadata = "EXCLUDE_ALL_METADATA"
   }
 
   priority = 1000
@@ -582,6 +580,10 @@ resource "google_compute_firewall" "orch_firewall_egress" {
 
   allow {
     protocol = "all"
+  }
+
+  log_config {
+    metadata = "EXCLUDE_ALL_METADATA"
   }
 
   direction   = "EGRESS"
