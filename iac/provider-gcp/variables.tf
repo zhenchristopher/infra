@@ -546,18 +546,13 @@ variable "remote_repository_enabled" {
 
 variable "client_clusters_config" {
   type = map(object({
-    cluster_size = number
+    cluster_size              = number
+    capacity_manager_max_size = number
 
     machine = object({
       type             = string
       min_cpu_platform = string
     })
-
-    autoscaler = optional(object({
-      size_max      = optional(number)
-      memory_target = optional(number)
-      cpu_target    = optional(number)
-    }))
 
     boot_disk = object({
       disk_type = string
@@ -579,15 +574,11 @@ variable "client_clusters_config" {
 Configuration for the client clusters.
 Format: [
   {
-      "cluster_size": 1,  // Number of nodes (the actual number of nodes may be higher due to autoscaling)
+      "cluster_size": 1,  // Bootstrap node count; runtime size is managed externally
+      "capacity_manager_max_size": 10, // Maximum nodes enforced by the session-aware capacity manager
       "machine": {   // Machine type and CPU platform
           "type": "n1-standard-8",
           "min_cpu_platform": "Intel Skylake"
-      },
-      "autoscaler": {
-          "size_max": 1, // Maximum number of nodes to scale up to
-          "memory_target": 100,  // Target memory utilization percentage for autoscaling (0-100)
-          "cpu_target": 0.7  // Target CPU utilization percentage for autoscaling (0-1)
       },
       "boot_disk": {
           "disk_type": "pd-ssd",  // Boot disk type
@@ -602,6 +593,11 @@ Format: [
   }
 ]
 EOT
+
+  validation {
+    condition     = alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 10])
+    error_message = "Client capacity manager max size must remain locked at 10."
+  }
 }
 
 variable "build_clusters_config" {

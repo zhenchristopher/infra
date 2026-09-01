@@ -207,19 +207,19 @@ module "build_cluster" {
 
 module "client_cluster" {
   for_each = var.client_clusters_config
-  source   = "./worker-cluster"
+  source   = "./client-worker-cluster"
 
   gcp_region                   = var.gcp_region
   gcp_zone                     = var.gcp_zone
   google_service_account_email = var.google_service_account_email
   google_service_account_key   = var.google_service_account_key
 
-  cluster_size     = each.value.cluster_size
-  cache_disks      = each.value.cache_disks
-  machine_type     = each.value.machine.type
-  min_cpu_platform = each.value.machine.min_cpu_platform
-  boot_disk        = each.value.boot_disk
-  autoscaler       = each.value.autoscaler
+  cluster_size              = each.value.cluster_size
+  capacity_manager_max_size = each.value.capacity_manager_max_size
+  cache_disks               = each.value.cache_disks
+  machine_type              = each.value.machine.type
+  min_cpu_platform          = each.value.machine.min_cpu_platform
+  boot_disk                 = each.value.boot_disk
 
   // This is here for backwards compatibility
   cluster_name              = each.key == "default" ? "${var.prefix}${var.client_cluster_name}" : "${var.prefix}${var.client_cluster_name}-${each.key}"
