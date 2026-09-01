@@ -402,14 +402,22 @@ func TestStatsParsing(t *testing.T) {
 user_usec 100000000
 system_usec 23456789
 nr_periods 0
-nr_throttled 0
-throttled_usec 0
+nr_throttled 42
+throttled_usec 7654321
 nr_bursts 0
 burst_usec 0`
 	err = os.WriteFile(filepath.Join(cgroupPath, "cpu.stat"), []byte(cpuStatContent), 0o644)
 	require.NoError(t, err)
 
 	err = os.WriteFile(filepath.Join(cgroupPath, "memory.current"), []byte("536870912"), 0o644)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(cgroupPath, "memory.events"), []byte("low 0\nhigh 0\nmax 1\noom 3\noom_kill 2\n"), 0o644)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(cgroupPath, "cpu.pressure"), []byte("some avg10=0.10 avg60=0.02 avg300=0.00 total=1234\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=12\n"), 0o644)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(cgroupPath, "memory.pressure"), []byte("some avg10=0.00 avg60=0.00 avg300=0.00 total=5678\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=34\n"), 0o644)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(cgroupPath, "io.pressure"), []byte("some avg10=0.00 avg60=0.00 avg300=0.00 total=9012\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=56\n"), 0o644)
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -423,8 +431,18 @@ burst_usec 0`
 	assert.Equal(t, uint64(123456789), stats.CPUUsageUsec, "CPUUsageUsec parsing")
 	assert.Equal(t, uint64(100000000), stats.CPUUserUsec, "CPUUserUsec parsing")
 	assert.Equal(t, uint64(23456789), stats.CPUSystemUsec, "CPUSystemUsec parsing")
+	assert.Equal(t, uint64(42), stats.CPUThrottledPeriods, "CPUThrottledPeriods parsing")
+	assert.Equal(t, uint64(7654321), stats.CPUThrottledUsec, "CPUThrottledUsec parsing")
 	assert.Equal(t, uint64(536870912), stats.MemoryUsageBytes, "MemoryUsageBytes parsing")
 	assert.Equal(t, uint64(0), stats.MemoryPeakBytes, "MemoryPeakBytes should be 0 without peak FD")
+	assert.Equal(t, uint64(3), stats.MemoryOOMEvents, "MemoryOOMEvents parsing")
+	assert.Equal(t, uint64(2), stats.MemoryOOMKills, "MemoryOOMKills parsing")
+	assert.Equal(t, uint64(1234), stats.CPUPressureSomeUsec, "CPUPressureSomeUsec parsing")
+	assert.Equal(t, uint64(12), stats.CPUPressureFullUsec, "CPUPressureFullUsec parsing")
+	assert.Equal(t, uint64(5678), stats.MemoryPressureSomeUsec, "MemoryPressureSomeUsec parsing")
+	assert.Equal(t, uint64(34), stats.MemoryPressureFullUsec, "MemoryPressureFullUsec parsing")
+	assert.Equal(t, uint64(9012), stats.IOPressureSomeUsec, "IOPressureSomeUsec parsing")
+	assert.Equal(t, uint64(56), stats.IOPressureFullUsec, "IOPressureFullUsec parsing")
 }
 
 func TestCgroupHandlePeakReset(t *testing.T) {
