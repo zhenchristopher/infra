@@ -651,13 +651,20 @@ resource "google_compute_security_policy_rule" "api-throttling-ip" {
   description = "Requests to API from IP address"
 }
 
+locals {
+  session_security_policy_source_expression = contains(var.session_security_policy_allowed_source_ranges, "*") ? "true" : join(
+    " || ",
+    [for cidr in var.session_security_policy_allowed_source_ranges : "inIpRange(origin.ip, '${cidr}')"],
+  )
+  session_security_policy_restricted = !contains(var.session_security_policy_allowed_source_ranges, "*")
+}
+
 resource "google_compute_security_policy_rule" "sandbox-throttling-host" {
-  count = var.session_security_policy_rules_managed_externally ? 0 : 1
+  count = var.session_security_policy_rules_managed_externally || local.session_security_policy_restricted ? 0 : 1
 
   lifecycle {
     prevent_destroy = true
   }
-
   security_policy = google_compute_security_policy.default["session"].name
   description     = "WS envd connection requests per sandbox"
 
@@ -720,12 +727,11 @@ resource "google_compute_security_policy_rule" "sandbox-routing-headers-log" {
 }
 
 resource "google_compute_security_policy_rule" "sandbox-throttling-ip" {
-  count = var.session_security_policy_rules_managed_externally ? 0 : 1
+  count = var.session_security_policy_rules_managed_externally || local.session_security_policy_restricted ? 0 : 1
 
   lifecycle {
     prevent_destroy = true
   }
-
   security_policy = google_compute_security_policy.default["session"].name
   action          = "throttle"
   priority        = "500"
@@ -753,6 +759,85 @@ resource "google_compute_security_policy_rule" "sandbox-throttling-ip" {
   }
 
   description = "Requests to sandboxes from IP address"
+}
+
+resource "google_compute_security_policy_rule" "sandbox-throttling-host-restricted" {
+  count = !var.session_security_policy_rules_managed_externally && local.session_security_policy_restricted ? 1 : 0
+
+  security_policy = google_compute_security_policy.default["session"].name
+  description     = "WS envd connection requests per sandbox from trusted provider egress ranges"
+
+  action   = "throttle"
+  priority = "300"
+  match {
+    expr {
+      expression = "request.path == \"/ws\" && (${local.session_security_policy_source_expression})"
+    }
+  }
+
+  rate_limit_options {
+    conform_action = "allow"
+    exceed_action  = "deny(429)"
+
+    enforce_on_key_configs {
+      enforce_on_key_name = "host"
+      enforce_on_key_type = "HTTP_HEADER"
+    }
+
+    rate_limit_threshold {
+      count        = 40
+      interval_sec = 30
+    }
+  }
+}
+
+resource "google_compute_security_policy_rule" "sandbox-throttling-ip-restricted" {
+  count = !var.session_security_policy_rules_managed_externally && local.session_security_policy_restricted ? 1 : 0
+
+  security_policy = google_compute_security_policy.default["session"].name
+  action          = "throttle"
+  priority        = "500"
+  match {
+    versioned_expr = "SRC_IPS_V1"
+    config {
+      src_ip_ranges = var.session_security_policy_allowed_source_ranges
+    }
+  }
+
+  rate_limit_options {
+    conform_action = "allow"
+    exceed_action  = "deny(429)"
+
+    enforce_on_key = ""
+
+    enforce_on_key_configs {
+      enforce_on_key_type = "IP"
+    }
+
+    rate_limit_threshold {
+      count        = 60000
+      interval_sec = 60
+    }
+  }
+
+  description = "Requests to sandboxes from trusted provider egress ranges"
+}
+
+resource "google_compute_security_policy_rule" "sandbox-deny-untrusted-sources" {
+  count = !var.session_security_policy_rules_managed_externally && local.session_security_policy_restricted ? 1 : 0
+
+  security_policy = google_compute_security_policy.default["session"].name
+  action          = "deny(403)"
+  priority        = "1000"
+
+  match {
+    versioned_expr = "SRC_IPS_V1"
+    config {
+      src_ip_ranges = ["*"]
+    }
+  }
+
+  description = "Deny direct sandbox requests from sources outside the trusted provider egress ranges"
 }
 
 # Cloud Router for NAT

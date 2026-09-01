@@ -33,6 +33,30 @@ terraform {
   }
 }
 
+resource "terraform_data" "canary_isolation" {
+  lifecycle {
+    precondition {
+      condition = !var.same_project_canary_enabled || (
+        var.environment == "dev" &&
+        var.gcp_project_id == "ashler-platform" &&
+        var.network_name == "default" &&
+        var.prefix == "cny-" &&
+        var.bucket_prefix == "ashler-platform-e2b-canary-" &&
+        var.domain_name == "e2b-canary.ashler.com" &&
+        var.orchestrator_image_family == "cny-orch" &&
+        !var.manage_project_services &&
+        var.orchestration_repository_id == "cny-e2b-orchestration" &&
+        var.cloudflare_api_token_secret_id == "ashler-e2b-dev-cloudflare-api-token" &&
+        !var.session_security_policy_rules_managed_externally &&
+        length(var.session_security_policy_allowed_source_ranges) == 1 &&
+        var.session_security_policy_allowed_source_ranges[0] == "34.139.212.107/32" &&
+        var.postgres_connection_string_secret_id == "cny-postgres-connection-string"
+      )
+      error_message = "canary must use the locked Ashler same-project isolation identity and disable shared project-service ownership."
+    }
+  }
+}
+
 provider "google" {
   project = var.gcp_project_id
   region  = var.gcp_region
@@ -255,9 +279,13 @@ locals {
 module "init" {
   source = "./init"
 
-  labels        = var.labels
-  prefix        = var.prefix
-  bucket_prefix = var.bucket_prefix
+  labels                               = var.labels
+  prefix                               = var.prefix
+  bucket_prefix                        = var.bucket_prefix
+  manage_project_services              = var.manage_project_services
+  orchestration_repository_id          = var.orchestration_repository_id
+  cloudflare_api_token_secret_id       = var.cloudflare_api_token_secret_id
+  postgres_connection_string_secret_id = var.postgres_connection_string_secret_id
 
   gcp_project_id = var.gcp_project_id
   gcp_region     = var.gcp_region
@@ -270,6 +298,8 @@ module "init" {
     admission_policy = var.anywhere_cache_admission_policy
     ttl              = var.anywhere_cache_ttl
   }
+
+  depends_on = [terraform_data.canary_isolation]
 }
 
 module "cluster" {
@@ -283,6 +313,10 @@ module "cluster" {
   gcp_zone                         = var.gcp_zone
   google_service_account_key       = module.init.google_service_account_key
   enable_gcp_telemetry_metrics     = var.enable_gcp_telemetry_metrics
+  server_image_family              = var.orchestrator_image_family
+  api_image_family                 = var.orchestrator_image_family
+  build_image_family               = var.orchestrator_image_family
+  client_image_family              = var.orchestrator_image_family
   network_name                     = var.network_name
 
   build_clusters_config  = var.build_clusters_config
@@ -312,6 +346,8 @@ module "cluster" {
   client_proxy_port                                = var.client_proxy_port
   client_proxy_health_port                         = var.client_proxy_health_port
   session_security_policy_rules_managed_externally = var.session_security_policy_rules_managed_externally
+  session_security_policy_allowed_source_ranges    = var.session_security_policy_allowed_source_ranges
+
 
   ingress_port                 = var.ingress_port
   api_port                     = var.api_port

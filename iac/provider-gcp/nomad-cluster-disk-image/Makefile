@@ -3,6 +3,7 @@ ENV := $(shell cat ../../../.last_used_env || echo "not-set")
 
 PACKER_NETWORK_NAME ?= e2b-build-cluster-disk-image
 PACKER_SUBNET_NAME ?= e2b-build-cluster-disk-image-subnetwork
+PACKER_TERRAFORM_STATE_PREFIX ?= terraform/cluster-disk-image/state
 
 tf_vars := TF_VAR_gcp_project_id=$(GCP_PROJECT_ID) \
 	TF_VAR_gcp_region=$(GCP_REGION) \
@@ -13,13 +14,14 @@ init:
 	packer init -upgrade .
 
 build:
-	terraform init -input=false -reconfigure -backend-config="bucket=${TERRAFORM_STATE_BUCKET}"
+	terraform init -input=false -reconfigure -backend-config="bucket=${TERRAFORM_STATE_BUCKET}" -backend-config="prefix=${PACKER_TERRAFORM_STATE_PREFIX}"
 	$(tf_vars) terraform apply -auto-approve -input=false -compact-warnings
 	packer build \
 		$(if $(PACKER_CONSUL_VERSION),-var "consul_version=$(PACKER_CONSUL_VERSION)") \
 		$(if $(PACKER_NOMAD_VERSION),-var "nomad_version=$(PACKER_NOMAD_VERSION)") \
 		$(if $(PACKER_NETWORK_NAME),-var "network_name=$(PACKER_NETWORK_NAME)") \
 		$(if $(PACKER_SUBNET_NAME),-var "subnet_name=$(PACKER_SUBNET_NAME)") \
+		-var "prefix=$(PREFIX)" \
 		$(if $(PACKER_SOURCE_IMAGE),-var "source_image=$(PACKER_SOURCE_IMAGE)") \
 		-var "gcp_project_id=$(GCP_PROJECT_ID)" \
 		-var "gcp_zone=$(GCP_ZONE)" \

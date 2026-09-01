@@ -98,6 +98,12 @@ variable "session_security_policy_rules_managed_externally" {
   default     = false
 }
 
+variable "session_security_policy_allowed_source_ranges" {
+  description = "Source CIDRs allowed to reach direct sandbox session hosts when this stack owns the policy rules."
+  type        = list(string)
+  default     = ["*"]
+}
+
 variable "nomad_port" {
   type = number
 }

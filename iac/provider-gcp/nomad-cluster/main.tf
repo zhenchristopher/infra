@@ -124,6 +124,8 @@ module "network" {
   client_proxy_port                                = var.client_proxy_port
   client_proxy_health_port                         = var.client_proxy_health_port
   session_security_policy_rules_managed_externally = var.session_security_policy_rules_managed_externally
+  session_security_policy_allowed_source_ranges    = var.session_security_policy_allowed_source_ranges
+
 
   api_instance_group        = google_compute_instance_group_manager.api_pool.instance_group
   extra_api_instance_groups = var.extra_api_instance_groups

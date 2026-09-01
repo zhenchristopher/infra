@@ -196,6 +196,18 @@ variable "session_security_policy_rules_managed_externally" {
   default     = false
 }
 
+variable "session_security_policy_allowed_source_ranges" {
+  description = "Source CIDRs allowed to reach direct sandbox session hosts when this stack owns the policy rules."
+  type        = list(string)
+  default     = ["*"]
+
+  validation {
+    condition     = length(var.session_security_policy_allowed_source_ranges) > 0 && alltrue([for cidr in var.session_security_policy_allowed_source_ranges : cidr == "*" || can(cidrnetmask(cidr))])
+    error_message = "session_security_policy_allowed_source_ranges must contain '*' or valid CIDRs."
+  }
+}
+
+
 variable "loki_cluster_size" {
   type    = number
   default = 0
@@ -363,6 +375,12 @@ variable "environment" {
   default = "prod"
 }
 
+variable "same_project_canary_enabled" {
+  type        = bool
+  description = "Enable the locked same-project canary identity checks while retaining the dev runtime tier."
+  default     = false
+}
+
 variable "otel_collector_resources_memory_mb" {
   type    = number
   default = 1024
@@ -436,9 +454,40 @@ variable "prefix" {
   default     = "e2b-"
 }
 
+variable "manage_project_services" {
+  type        = bool
+  description = "Whether this stack owns shared project API enablement."
+  default     = true
+}
+
+variable "orchestration_repository_id" {
+  type        = string
+  description = "Artifact Registry repository retained for legacy orchestration images."
+  default     = "e2b-orchestration"
+}
+
+variable "orchestrator_image_family" {
+  type        = string
+  description = "Compute image family used by every Nomad node pool."
+  default     = "e2b-orch"
+}
+
+variable "cloudflare_api_token_secret_id" {
+  type        = string
+  description = "Existing Cloudflare API token secret to reuse instead of creating a prefixed placeholder."
+  default     = ""
+}
+
+variable "postgres_connection_string_secret_id" {
+  type        = string
+  description = "Existing PostgreSQL DSN secret to reuse instead of creating a prefixed placeholder."
+  default     = ""
+}
+
 variable "bucket_prefix" {
   type = string
 }
+
 
 variable "labels" {
   description = "The labels to attach to resources created by this module"

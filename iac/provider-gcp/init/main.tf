@@ -1,6 +1,7 @@
 
 # Enable Secrets Manager API
 resource "google_project_service" "secrets_manager_api" {
+  count   = var.manage_project_services ? 1 : 0
   service = "secretmanager.googleapis.com"
 
   disable_on_destroy = false
@@ -8,6 +9,7 @@ resource "google_project_service" "secrets_manager_api" {
 
 # Enable Certificate Manager API
 resource "google_project_service" "certificate_manager_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "certificatemanager.googleapis.com"
 
@@ -16,6 +18,7 @@ resource "google_project_service" "certificate_manager_api" {
 
 # Enable Compute Engine API
 resource "google_project_service" "compute_engine_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "compute.googleapis.com"
 
@@ -24,6 +27,7 @@ resource "google_project_service" "compute_engine_api" {
 
 # Enable Artifact Registry API
 resource "google_project_service" "artifact_registry_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "artifactregistry.googleapis.com"
 
@@ -32,6 +36,7 @@ resource "google_project_service" "artifact_registry_api" {
 
 # Enable OS Config API
 resource "google_project_service" "os_config_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "osconfig.googleapis.com"
 
@@ -40,6 +45,7 @@ resource "google_project_service" "os_config_api" {
 
 # Enable Stackdriver Monitoring API
 resource "google_project_service" "monitoring_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "monitoring.googleapis.com"
 
@@ -48,6 +54,7 @@ resource "google_project_service" "monitoring_api" {
 
 # Enable Stackdriver Logging API
 resource "google_project_service" "logging_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "logging.googleapis.com"
 
@@ -56,6 +63,7 @@ resource "google_project_service" "logging_api" {
 
 # Enable Filestore API
 resource "google_project_service" "filestore_api" {
+  count = var.manage_project_services ? 1 : 0
   #project = var.gcp_project_id
   service = "file.googleapis.com"
 
@@ -80,7 +88,7 @@ resource "google_service_account_key" "google_service_key" {
 // todo: delete after migration period
 resource "google_artifact_registry_repository" "orchestration_repository" {
   format        = "DOCKER"
-  repository_id = "e2b-orchestration"
+  repository_id = var.orchestration_repository_id
   labels        = var.labels
 
   depends_on = [time_sleep.artifact_registry_api_wait_90_seconds]
