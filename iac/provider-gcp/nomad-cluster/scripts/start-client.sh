@@ -15,6 +15,14 @@ set -x
 # Inspired by https://alestic.com/2010/12/ec2-user-data-output/
 exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
+# Load NBD before disk initialization. Reboots can encounter an already-mounted
+# local SSD and exit during partition setup, but orchestrator still requires NBD.
+cat <<EOF >/etc/modprobe.d/nbd.conf
+options nbd nbds_max=4096
+EOF
+echo nbd >/etc/modules-load.d/nbd.conf
+modprobe nbd nbds_max=4096
+
 %{ if LOCAL_SSD == "true" }
   # Add cache disk for orchestrator and swapfile
   for i in {0..${ CACHE_DISK_COUNT - 1 }}; do
@@ -138,9 +146,6 @@ EOH
 
 udevadm control --reload-rules
 udevadm trigger
-
-# Load the nbd module with 4096 devices
-modprobe nbd nbds_max=4096
 
 # Create the directory for the fc mounts
 mkdir -p /fc-vm
