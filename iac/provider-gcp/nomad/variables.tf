@@ -388,6 +388,12 @@ variable "enable_gcp_telemetry_external_metrics" {
   description = "Enable exporting external e2b.* metrics to Google Cloud Monitoring. Requires enable_gcp_telemetry_metrics."
 }
 
+variable "scaffold_clickstack_otlp_endpoint" {
+  type        = string
+  default     = ""
+  description = "Authenticated OTLP/HTTP endpoint used for direct Scaffold OOM telemetry export."
+}
+
 variable "clickhouse_server_port" {
   type = object({
     name = string

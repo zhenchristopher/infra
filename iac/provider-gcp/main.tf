@@ -473,6 +473,7 @@ module "nomad" {
   otel_router_grpc_port                 = var.otel_router_grpc_port
   enable_gcp_telemetry_metrics          = var.enable_gcp_telemetry_metrics
   enable_gcp_telemetry_external_metrics = var.enable_gcp_telemetry_external_metrics
+  scaffold_clickstack_otlp_endpoint     = var.scaffold_clickstack_otlp_endpoint
 
   # Dashboard API
   dashboard_api_count    = var.dashboard_api_count

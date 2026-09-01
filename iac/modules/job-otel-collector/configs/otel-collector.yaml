@@ -207,6 +207,23 @@ processors:
     timeout: 5s
     send_batch_size: 50000
 
+%{ if scaffold_clickstack_otlp_endpoint != "" }
+  filter/scaffold_oom_kills:
+    error_mode: ignore
+    metrics:
+      metric:
+        - 'name != "orchestrator.sandbox.cgroup.memory.events"'
+      datapoint:
+        - 'attributes["event"] != "oom_kill"'
+
+  cumulativetodelta/scaffold_oom_kills:
+    include:
+      match_type: strict
+      metrics:
+        - orchestrator.sandbox.cgroup.memory.events
+    initial_value: keep
+%{ endif }
+
 %{ if provider_name == "gcp" && enable_gcp_telemetry_metrics }
   batch/gcp_telemetry:
     timeout: 5s
@@ -533,6 +550,12 @@ exporters:
     endpoint: "${grafana_otlp_url}/otlp"
     auth:
       authenticator: basicauth/grafana_cloud
+%{ if scaffold_clickstack_otlp_endpoint != "" }
+  otlp_http/scaffold_clickstack:
+    endpoint: "${scaffold_clickstack_otlp_endpoint}"
+    headers:
+      authorization: "${scaffold_clickstack_otlp_token}"
+%{ endif }
 %{ if provider_name == "gcp" && enable_gcp_telemetry_metrics }
   googlemanagedprometheus/gcp_telemetry:
     project: ${gcp_telemetry_project_id}
@@ -581,6 +604,19 @@ service:
         - batch
       exporters:
         - otlp_http/grafana_cloud
+%{ if scaffold_clickstack_otlp_endpoint != "" }
+    metrics/scaffold_oom_kills:
+      receivers:
+        - otlp
+      processors:
+        - filter/scaffold_oom_kills
+        - cumulativetodelta/scaffold_oom_kills
+        - resourcedetection
+        - transform/set-name
+        - batch
+      exporters:
+        - otlp_http/scaffold_clickstack
+%{ endif }
     metrics/prometheus:
       receivers:
         - prometheus

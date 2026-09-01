@@ -208,6 +208,29 @@ data "google_secret_manager_secret_version" "grafana_username" {
   depends_on = [google_secret_manager_secret_version.grafana_username]
 }
 
+resource "google_secret_manager_secret" "scaffold_clickstack_otlp_token" {
+  secret_id = "${var.prefix}scaffold-clickstack-otlp-token"
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "scaffold_clickstack_otlp_token" {
+  secret      = google_secret_manager_secret.scaffold_clickstack_otlp_token.name
+  secret_data = " "
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+data "google_secret_manager_secret_version" "scaffold_clickstack_otlp_token" {
+  secret = google_secret_manager_secret.scaffold_clickstack_otlp_token.name
+
+  depends_on = [google_secret_manager_secret_version.scaffold_clickstack_otlp_token]
+}
+
 module "otel_collector" {
   source = "../../modules/job-otel-collector"
 
@@ -229,6 +252,9 @@ module "otel_collector" {
   enable_gcp_telemetry_metrics          = var.enable_gcp_telemetry_metrics
   enable_gcp_telemetry_external_metrics = var.enable_gcp_telemetry_external_metrics
   gcp_telemetry_project_id              = var.gcp_project_id
+
+  scaffold_clickstack_otlp_endpoint = var.scaffold_clickstack_otlp_endpoint
+  scaffold_clickstack_otlp_token    = data.google_secret_manager_secret_version.scaffold_clickstack_otlp_token.secret_data
 
   clickhouse_username = var.clickhouse_username
   clickhouse_password = var.clickhouse_password
