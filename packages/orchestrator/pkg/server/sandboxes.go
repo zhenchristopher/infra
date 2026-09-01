@@ -240,6 +240,10 @@ func (s *Server) Create(ctx context.Context, req *orchestrator.SandboxCreateRequ
 	}
 	defer s.startingSandboxes.Release(1)
 
+	if err := s.ensureRunningPlusStartingCapacity(ctx, s.sandboxFactory.Sandboxes.Count(), maxRunningSandboxesPerNode); err != nil {
+		return nil, err
+	}
+
 	template, err := s.templateCache.GetTemplate(
 		ctx,
 		req.GetSandbox().GetBuildId(),
@@ -431,6 +435,17 @@ func (s *Server) Create(ctx context.Context, req *orchestrator.SandboxCreateRequ
 		// flag, which drifts from this frozen value whenever the flag moves.
 		ResolvedFirecrackerVersion: resolvedFCVersion,
 	}, nil
+}
+
+func (s *Server) ensureRunningPlusStartingCapacity(ctx context.Context, runningSandboxes int, maxRunningSandboxesPerNode int) error {
+	runningPlusStarting := runningSandboxes + int(s.startingSandboxes.Used())
+	if runningPlusStarting <= maxRunningSandboxesPerNode {
+		return nil
+	}
+
+	telemetry.ReportEvent(ctx, "max number of running plus starting sandboxes reached")
+
+	return status.Errorf(codes.ResourceExhausted, "max number of running plus starting sandboxes on node reached (%d), please retry", maxRunningSandboxesPerNode)
 }
 
 func createVolumeMountModelsFromAPI(volumeMounts []*orchestrator.SandboxVolumeMount) ([]sandbox.VolumeMountConfig, error) {

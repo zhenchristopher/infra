@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/e2b-dev/infra/packages/shared/pkg/grpc/orchestrator"
 	"github.com/e2b-dev/infra/packages/shared/pkg/id"
 	"github.com/e2b-dev/infra/packages/shared/pkg/telemetry"
+	"github.com/e2b-dev/infra/packages/shared/pkg/utils"
 )
 
 var (
@@ -274,4 +277,21 @@ func TestRecordExecutionDuration(t *testing.T) {
 		string(sandbox.StopReasonCrashed):       1,
 	}, got)
 	assert.Equal(t, time.Minute.Milliseconds(), sum[string(sandbox.StopReasonKilled)])
+}
+
+func TestServerRejectsRunningPlusStartingAboveNodeLimit(t *testing.T) {
+	t.Parallel()
+
+	startingSandboxes, err := utils.NewAdjustableSemaphore(3)
+	require.NoError(t, err)
+	require.NoError(t, startingSandboxes.Acquire(t.Context(), 1))
+
+	s := &Server{startingSandboxes: startingSandboxes}
+
+	err = s.ensureRunningPlusStartingCapacity(t.Context(), 2, 3)
+	require.NoError(t, err)
+
+	err = s.ensureRunningPlusStartingCapacity(t.Context(), 3, 3)
+	require.Error(t, err)
+	require.Equal(t, codes.ResourceExhausted, status.Code(err))
 }
