@@ -340,13 +340,19 @@ func getBestOfKConfig(ctx context.Context, featureFlagsClient *featureflags.Clie
 
 	alphaPercent := featureFlagsClient.IntFlag(ctx, featureflags.BestOfKAlpha)
 
+	hybridPlacement := featureFlagsClient.BoolFlag(ctx, featureflags.HybridPlacementFlag)
+	hybridThreshold := featureFlagsClient.IntFlag(ctx, featureflags.HybridPlacementThreshold)
+	hybridCeiling := featureFlagsClient.IntFlag(ctx, featureflags.HybridPlacementCeiling)
 	// Convert percentage to decimal
 	alpha := float64(alphaPercent) / 100.0
 	maxOvercommit := float64(maxOvercommitPercent) / 100.0
 
 	return placement.BestOfKConfig{
-		R:     maxOvercommit,
-		K:     k,
-		Alpha: alpha,
+		R:               maxOvercommit,
+		K:               k,
+		Alpha:           alpha,
+		HybridPlacement: hybridPlacement,
+		HybridThreshold: hybridThreshold,
+		HybridCeiling:   hybridCeiling,
 	}
 }

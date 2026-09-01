@@ -36,6 +36,9 @@ type PlacementResult struct {
 type Algorithm interface {
 	chooseNode(ctx context.Context, nodes []*nodemanager.Node, nodesExcluded map[string]struct{}, requested nodemanager.SandboxResources, cpu CPURequirement, features FeatureRequirement, filterByLabels bool, requiredLabels []string) (*nodemanager.Node, error)
 }
+type reservationAlgorithm interface {
+	tryReserve(node *nodemanager.Node, sandboxID string, resources nodemanager.SandboxResources) bool
+}
 
 // PlaceSandbox derives sbxRequest's orchestrator-capability requirement and
 // places it. The requirement is read off the request rather than supplied by
@@ -153,10 +156,21 @@ func placeSandbox(
 			telemetry.ReportEvent(ctx, "Placing sandbox on the node", telemetry.WithNodeID(node.ID))
 		}
 
-		node.PlacementMetrics.StartPlacing(sbxRequest.GetSandbox().GetSandboxId(), nodemanager.SandboxResources{
+		resources := nodemanager.SandboxResources{
 			CPUs:      sbxRequest.GetSandbox().GetVcpu(),
 			MiBMemory: sbxRequest.GetSandbox().GetRamMb(),
-		})
+		}
+		if reserving, ok := algorithm.(reservationAlgorithm); ok {
+			if !reserving.tryReserve(node, sbxRequest.GetSandbox().GetSandboxId(), resources) {
+				nodesExcluded[node.ID] = struct{}{}
+				node = nil
+				attempt++
+
+				continue
+			}
+		} else {
+			node.PlacementMetrics.StartPlacing(sbxRequest.GetSandbox().GetSandboxId(), resources)
+		}
 
 		ctx, span := tracer.Start(ctx, "create-sandbox")
 		span.SetAttributes(

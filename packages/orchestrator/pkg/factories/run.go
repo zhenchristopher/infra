@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/gofrs/flock"
-	"github.com/google/uuid"
 	"github.com/soheilhy/cmux"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -423,7 +423,12 @@ func run(config cfg.Config, opts Options) (success bool) {
 
 	nodeID := env.GetNodeID()
 	serviceName := cfg.GetServiceName(services)
-	serviceInstanceID := uuid.NewString()
+	serviceInstanceID, err := service.LoadOrCreateServiceInstanceID(filepath.Join(config.OrchestratorBaseDir, "service-instance.json"))
+	if err != nil {
+		log.Printf("failed to load stable service instance ID: %v", err)
+
+		return false
+	}
 
 	// Detect CPU platform for orchestrator pool matching
 	machineInfo, err := machineinfo.Detect()
@@ -575,6 +580,19 @@ func run(config cfg.Config, opts Options) (success bool) {
 		}
 	}(sbxLoggerExternal)
 	sbxlogger.SetSandboxLoggerExternal(sbxLoggerExternal)
+
+	admission, err := service.NewAdmissionController(ctx, serviceInfo, sandboxes, service.AdmissionConfig{
+		StatePath: filepath.Join(config.OrchestratorBaseDir, "host-admission.json"),
+		Enabled: func(ctx context.Context) bool {
+			return featureFlags.BoolFlag(ctx, featureflags.HostAdmissionFlag)
+		},
+		Ceiling: func(ctx context.Context) int {
+			return featureFlags.IntFlag(ctx, featureflags.HybridPlacementCeiling)
+		},
+	})
+	if err != nil {
+		logger.L().Fatal(ctx, "failed to initialize host admission", zap.Error(err))
+	}
 
 	// gcp concurrent upload limiter
 	limiter, err := limit.New(ctx, featureFlags)
@@ -871,6 +889,7 @@ func run(config cfg.Config, opts Options) (success bool) {
 		SbxEventsService: eventsService,
 		PeerRegistry:     peerRegistry,
 		Uploads:          uploads,
+		Admission:        admission,
 	})
 	if err != nil {
 		logger.L().Fatal(ctx, "failed to create orchestrator server", zap.Error(err))
@@ -964,7 +983,7 @@ func run(config cfg.Config, opts Options) (success bool) {
 		closers = append(closers, closer{"template server", tmpl.Close})
 	}
 
-	infoService := service.NewInfoService(serviceInfo, sandboxes, hostMetrics)
+	infoService := service.NewInfoService(serviceInfo, sandboxes, hostMetrics, admission)
 	orchestratorinfo.RegisterInfoServiceServer(grpcServer, infoService)
 
 	grpcHealth := health.NewServer()

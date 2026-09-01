@@ -205,6 +205,18 @@ func (s *Server) Create(ctx context.Context, req *orchestrator.SandboxCreateRequ
 
 	maxRunningSandboxesPerNode := s.featureFlags.IntFlag(ctx, featureflags.MaxSandboxesPerNode)
 
+	admissionReserved, err := s.admission.BeginCreate(ctx, req.GetSandbox().GetSandboxId())
+	if err != nil {
+		return nil, err
+	}
+	if admissionReserved {
+		defer func() {
+			if err := s.admission.EndCreate(context.WithoutCancel(ctx), req.GetSandbox().GetSandboxId()); err != nil {
+				logger.L().Error(ctx, "failed to release host admission reservation", zap.Error(err), logger.WithSandboxID(req.GetSandbox().GetSandboxId()))
+			}
+		}()
+	}
+
 	runningSandboxes := s.sandboxFactory.Sandboxes.Count()
 	if runningSandboxes >= maxRunningSandboxesPerNode {
 		telemetry.ReportEvent(ctx, "max number of running sandboxes reached")

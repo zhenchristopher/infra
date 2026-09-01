@@ -85,3 +85,69 @@ func (a *APIStore) PostNodesNodeID(c *gin.Context, nodeId api.NodeID) {
 
 	c.Status(http.StatusNoContent)
 }
+
+func (a *APIStore) GetNodesNodeIDAdmission(c *gin.Context, nodeID api.NodeID, params api.GetNodesNodeIDAdmissionParams) {
+	clusterID := clusters.WithClusterFallback(params.ClusterID)
+	node := a.orchestrator.GetNode(clusterID, nodeID)
+	if node == nil {
+		c.Status(http.StatusNotFound)
+
+		return
+	}
+
+	result, err := node.HostAdmission(c.Request.Context())
+	if err != nil {
+		a.sendAPIStoreError(c, http.StatusConflict, fmt.Sprintf("Error when reading host admission: %s", err))
+
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (a *APIStore) PostNodesNodeIDDrain(c *gin.Context, nodeID api.NodeID) {
+	ctx := c.Request.Context()
+	body, err := ginutils.ParseBody[api.PostNodesNodeIDDrainJSONRequestBody](ctx, c)
+	if err != nil {
+		a.sendAPIStoreError(c, http.StatusBadRequest, fmt.Sprintf("Error when parsing request: %s", err))
+
+		return
+	}
+	clusterID := clusters.WithClusterFallback(body.ClusterID)
+	node := a.orchestrator.GetNode(clusterID, nodeID)
+	if node == nil {
+		c.Status(http.StatusNotFound)
+
+		return
+	}
+	result, err := node.HostDrain(ctx, body.RequestID.String())
+	if err != nil {
+		a.sendAPIStoreError(c, http.StatusConflict, fmt.Sprintf("Error when draining host: %s", err))
+
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (a *APIStore) PostNodesNodeIDReady(c *gin.Context, nodeID api.NodeID) {
+	ctx := c.Request.Context()
+	body, err := ginutils.ParseBody[api.PostNodesNodeIDReadyJSONRequestBody](ctx, c)
+	if err != nil {
+		a.sendAPIStoreError(c, http.StatusBadRequest, fmt.Sprintf("Error when parsing request: %s", err))
+
+		return
+	}
+	clusterID := clusters.WithClusterFallback(body.ClusterID)
+	node := a.orchestrator.GetNode(clusterID, nodeID)
+	if node == nil {
+		c.Status(http.StatusNotFound)
+
+		return
+	}
+	result, err := node.HostReady(ctx, body.ExpectedDrainGeneration)
+	if err != nil {
+		a.sendAPIStoreError(c, http.StatusConflict, fmt.Sprintf("Error when readying host: %s", err))
+
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}

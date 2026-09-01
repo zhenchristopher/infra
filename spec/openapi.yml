@@ -1783,6 +1783,82 @@ components:
         status:
           $ref: "#/components/schemas/NodeStatus"
 
+    HostDrainRequest:
+      required:
+        - requestID
+      properties:
+        clusterID:
+          type: string
+          format: uuid
+          description: Identifier of the cluster
+        requestID:
+          type: string
+          format: uuid
+          description: Persisted idempotent drain request identifier
+
+    HostReadyRequest:
+      required:
+        - expectedDrainGeneration
+      properties:
+        clusterID:
+          type: string
+          format: uuid
+          description: Identifier of the cluster
+        expectedDrainGeneration:
+          type: integer
+          format: uint64
+          description: Exact acknowledged drain generation to cancel
+
+    HostAdmissionSnapshot:
+      required:
+        - nodeID
+        - serviceInstanceID
+        - status
+        - drainGeneration
+        - admissionClosed
+        - runningCount
+        - startingCount
+        - recoveryComplete
+        - recoveryEpoch
+        - quiescent
+      properties:
+        nodeID:
+          type: string
+          description: Stable E2B node identifier
+        serviceInstanceID:
+          type: string
+          description: Stable host service instance identifier
+        status:
+          $ref: "#/components/schemas/NodeStatus"
+        drainRequestID:
+          type: string
+          description: Active idempotent drain request identifier
+        drainGeneration:
+          type: integer
+          format: uint64
+          description: Monotonic host-allocated drain generation
+        admissionClosed:
+          type: boolean
+          description: Whether the host rejects new sandbox creates
+        runningCount:
+          type: integer
+          format: uint32
+          description: Authoritative host-local running sandbox count
+        startingCount:
+          type: integer
+          format: uint32
+          description: Authoritative host-local starting reservation count
+        recoveryComplete:
+          type: boolean
+          description: Whether host-local counts are authoritative after restart
+        recoveryEpoch:
+          type: integer
+          format: uint64
+          description: Stable host recovery epoch
+        quiescent:
+          type: boolean
+          description: Whether recovery is complete and running plus starting is zero
+
     DiskMetrics:
       required:
         - mountPoint
@@ -3842,6 +3918,101 @@ paths:
           $ref: "#/components/responses/401"
         "404":
           $ref: "#/components/responses/404"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /nodes/{nodeID}/admission:
+    get:
+      description: Read authoritative host-local admission state
+      tags: [admin]
+      security:
+        - AdminTokenAuth: []
+      parameters:
+        - $ref: "#/components/parameters/nodeID"
+        - in: query
+          name: clusterID
+          description: Identifier of the cluster
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Successfully returned host-local admission state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostAdmissionSnapshot"
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /nodes/{nodeID}/drain:
+    post:
+      description: Idempotently close host admission and allocate a drain generation
+      tags: [admin]
+      security:
+        - AdminTokenAuth: []
+      parameters:
+        - $ref: "#/components/parameters/nodeID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostDrainRequest"
+      responses:
+        "200":
+          description: Successfully acknowledged the exact drain request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostAdmissionSnapshot"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
+        "500":
+          $ref: "#/components/responses/500"
+
+  /nodes/{nodeID}/ready:
+    post:
+      description: Re-open host admission for the exact expected drain generation
+      tags: [admin]
+      security:
+        - AdminTokenAuth: []
+      parameters:
+        - $ref: "#/components/parameters/nodeID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostReadyRequest"
+      responses:
+        "200":
+          description: Successfully cancelled the exact drain generation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostAdmissionSnapshot"
+        "400":
+          $ref: "#/components/responses/400"
+        "401":
+          $ref: "#/components/responses/401"
+        "404":
+          $ref: "#/components/responses/404"
+        "409":
+          $ref: "#/components/responses/409"
         "500":
           $ref: "#/components/responses/500"
 

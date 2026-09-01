@@ -128,6 +128,8 @@ var (
 	TemplateFeatureFlag                 = NewBoolFlag("use-nfs-for-templates", env.IsDevelopment())
 	EnableWriteThroughCacheFlag         = NewBoolFlag("write-to-cache-on-writes", false)
 	UseNFSCacheForBuildingTemplatesFlag = NewBoolFlag("use-nfs-for-building-templates", env.IsDevelopment())
+	HybridPlacementFlag                 = NewBoolFlag("hybrid-placement-enabled", false)
+	HostAdmissionFlag                   = NewBoolFlag("host-admission-enabled", false)
 	CreateStorageCacheSpansFlag         = NewBoolFlag("create-storage-cache-spans", env.IsDevelopment())
 	OrchAcceptsCombinedHostFlag         = NewBoolFlag("orch-accepts-combined-host", false)
 	WorkspacesEnabledFlag               = NewBoolFlag("workspacesEnabled", false)
@@ -415,9 +417,11 @@ var (
 	ClickhouseBatcherMaxBatchSize = NewIntFlag("clickhouse-batcher-max-batch-size", 1000)
 	ClickhouseBatcherMaxDelay     = NewIntFlag("clickhouse-batcher-max-delay", 1000) // 1s in milliseconds
 	ClickhouseBatcherQueueSize    = NewIntFlag("clickhouse-batcher-queue-size", 1000)
-	BestOfKSampleSize             = NewIntFlag("best-of-k-sample-size", 3)                           // Default K=3
-	BestOfKMaxOvercommit          = NewIntFlag("best-of-k-max-overcommit", 400)                      // Default R=4 (stored as percentage, max over-commit ratio)
-	BestOfKAlpha                  = NewIntFlag("best-of-k-alpha", 50)                                // Default Alpha=0.5 (stored as percentage for int flag, current usage weight)
+	BestOfKSampleSize             = NewIntFlag("best-of-k-sample-size", 3)      // Default K=3
+	BestOfKMaxOvercommit          = NewIntFlag("best-of-k-max-overcommit", 400) // Default R=4 (stored as percentage, max over-commit ratio)
+	BestOfKAlpha                  = NewIntFlag("best-of-k-alpha", 50)           // Default Alpha=0.5 (stored as percentage for int flag, current usage weight)
+	HybridPlacementThreshold      = NewIntFlag("hybrid-placement-threshold", 4)
+	HybridPlacementCeiling        = NewIntFlag("hybrid-placement-ceiling", 4)
 	EnvdInitTimeoutMilliseconds   = NewIntFlag("envd-init-request-timeout-milliseconds", 50)         // Timeout for envd init request in milliseconds
 	EnvdTimeoutMilliseconds       = NewIntFlag("envd-timeout-milliseconds", envdTimeoutFallbackMs()) // Timeout for waiting for envd on resume; falls back to ENVD_TIMEOUT env var (default 10s)
 	// GuestSyncTimeoutMs overrides the mandatory pre-pause guest-sync deadline

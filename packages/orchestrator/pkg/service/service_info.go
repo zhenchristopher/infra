@@ -24,13 +24,15 @@ type Server struct {
 	info        *ServiceInfo
 	sandboxes   *sandbox.Map
 	hostMetrics *metrics.HostMetrics
+	admission   *AdmissionController
 }
 
-func NewInfoService(info *ServiceInfo, sandboxes *sandbox.Map, hostMetrics *metrics.HostMetrics) *Server {
+func NewInfoService(info *ServiceInfo, sandboxes *sandbox.Map, hostMetrics *metrics.HostMetrics, admission *AdmissionController) *Server {
 	return &Server{
 		info:        info,
 		sandboxes:   sandboxes,
 		hostMetrics: hostMetrics,
+		admission:   admission,
 	}
 }
 
@@ -87,6 +89,7 @@ func (s *Server) ServiceInfo(ctx context.Context, _ *emptypb.Empty) (*orchestrat
 		MetricCpuAllocated:         sandboxVCpuAllocated,
 		MetricMemoryAllocatedBytes: sandboxMemoryAllocated,
 		MetricDiskAllocatedBytes:   sandboxDiskAllocated,
+		MetricSandboxesStarting:    s.admission.StartingCount(),
 		MetricSandboxesRunning:     uint32(s.sandboxes.Count()),
 
 		// Host system usage metrics
@@ -142,9 +145,69 @@ func convertMachineInfo(machineInfo machineinfo.MachineInfo) *orchestratorinfo.M
 
 func (s *Server) ServiceStatusOverride(ctx context.Context, req *orchestratorinfo.ServiceStatusChangeRequest) (*emptypb.Empty, error) {
 	logger.L().Info(ctx, "service status override request received", zap.String("status", req.GetServiceStatus().String()))
+	if s.admission.enabled(ctx) {
+		if req.GetServiceStatus() == orchestratorinfo.ServiceInfoStatus_Healthy {
+			return nil, status.Error(codes.FailedPrecondition, "managed host admission requires HostReady with the expected drain generation")
+		}
+		if err := s.admission.CloseForStatus(ctx, req.GetServiceStatus()); err != nil {
+			return nil, status.Errorf(codes.Internal, "close host admission: %s", err)
+		}
+
+		return &emptypb.Empty{}, nil
+	}
 	if !s.info.OverrideStatus(ctx, req.GetServiceStatus()) {
 		return nil, status.Error(codes.FailedPrecondition, "cannot change node status from draining to standby")
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *Server) HostAdmission(_ context.Context, _ *emptypb.Empty) (*orchestratorinfo.HostAdmissionSnapshot, error) {
+	if s.admission == nil {
+		return nil, status.Error(codes.FailedPrecondition, "host admission contract is unavailable")
+	}
+
+	return hostAdmissionResponse(s.admission.Snapshot()), nil
+}
+
+func (s *Server) HostDrain(ctx context.Context, req *orchestratorinfo.HostDrainRequest) (*orchestratorinfo.HostAdmissionSnapshot, error) {
+	if s.admission == nil {
+		return nil, status.Error(codes.FailedPrecondition, "host admission contract is unavailable")
+	}
+
+	snapshot, err := s.admission.Drain(ctx, req.GetRequestId())
+	if err != nil {
+		return nil, err
+	}
+
+	return hostAdmissionResponse(snapshot), nil
+}
+
+func (s *Server) HostReady(ctx context.Context, req *orchestratorinfo.HostReadyRequest) (*orchestratorinfo.HostAdmissionSnapshot, error) {
+	if s.admission == nil {
+		return nil, status.Error(codes.FailedPrecondition, "host admission contract is unavailable")
+	}
+
+	snapshot, err := s.admission.Ready(ctx, req.GetExpectedDrainGeneration())
+	if err != nil {
+		return nil, err
+	}
+
+	return hostAdmissionResponse(snapshot), nil
+}
+
+func hostAdmissionResponse(snapshot AdmissionSnapshot) *orchestratorinfo.HostAdmissionSnapshot {
+	return &orchestratorinfo.HostAdmissionSnapshot{
+		NodeId:                  snapshot.NodeID,
+		ServiceId:               snapshot.ServiceID,
+		ServiceStatus:           snapshot.ServiceStatus,
+		DrainRequestId:          snapshot.DrainRequestID,
+		DrainGeneration:         snapshot.DrainGeneration,
+		AdmissionClosed:         snapshot.AdmissionClosed,
+		MetricSandboxesRunning:  snapshot.RunningCount,
+		MetricSandboxesStarting: snapshot.StartingCount,
+		RecoveryComplete:        snapshot.RecoveryComplete,
+		RecoveryEpoch:           snapshot.RecoveryEpoch,
+		Quiescent:               snapshot.Quiescent,
+	}
 }
