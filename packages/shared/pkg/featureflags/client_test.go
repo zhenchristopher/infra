@@ -107,4 +107,10 @@ func TestSafetyIntEnvironmentOverrides(t *testing.T) {
 
 	t.Setenv(sandboxLimitOverrideEnv, "0")
 	require.Zero(t, client.IntFlag(t.Context(), HybridPlacementCeiling))
+
+	t.Setenv(buildCacheUsageOverrideEnv, "70")
+	require.Equal(t, 70, client.IntFlag(t.Context(), BuildCacheMaxUsagePercentage))
+
+	t.Setenv(buildCacheUsageOverrideEnv, "invalid")
+	require.Zero(t, client.IntFlag(t.Context(), BuildCacheMaxUsagePercentage))
 }

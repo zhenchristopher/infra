@@ -826,7 +826,12 @@ variable "orchestrator_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
+  validation {
+    condition     = alltrue([for name in keys(var.orchestrator_env_vars) : contains(["E2B_HOST_ADMISSION_ENABLED", "E2B_SANDBOXES_PER_HOST_LIMIT", "E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE"], name)])
+    error_message = "orchestrator_env_vars may only set E2B_HOST_ADMISSION_ENABLED, E2B_SANDBOXES_PER_HOST_LIMIT, and E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE."
+  }
 }
+
 
 variable "api_env_vars" {
   type      = map(string)

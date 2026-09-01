@@ -297,7 +297,7 @@ func (lb *LayerExecutor) UploadSnapshot(
 	userLogger.Debug(ctx, fmt.Sprintf("Adding layer to cache: %s", meta.Template.BuildID))
 
 	// Add snapshot to template cache so it can be used immediately
-	err := lb.templateCache.AddSnapshot(
+	releaseSnapshotPins, err := lb.templateCache.AddSnapshot(
 		context.WithoutCancel(ctx),
 		meta.Template.BuildID,
 		snapshot.MemorySnapshot.DiffHeader,
@@ -323,10 +323,14 @@ func (lb *LayerExecutor) UploadSnapshot(
 
 	upload, err := sandbox.NewUpload(ctx, lb.uploads, snapshot, lb.templateStorage, lb.compressConfig, lb.ff, storage.UseCaseBuild, objectMetadata)
 	if err != nil {
+		releaseSnapshotPins()
+
 		return fmt.Errorf("register upload: %w", err)
 	}
 
 	lb.UploadErrGroup.Go(func() (uploadErr error) {
+		defer releaseSnapshotPins()
+
 		ctx := context.WithoutCancel(ctx)
 		ctx, span := tracer.Start(ctx, "upload snapshot", trace.WithAttributes(
 			telemetry.WithTemplateID(lb.Config.TemplateID),

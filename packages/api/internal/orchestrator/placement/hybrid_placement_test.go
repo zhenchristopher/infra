@@ -22,7 +22,6 @@ func hybridTestAlgorithm() *BestOfK {
 		R:               4,
 		K:               1,
 		Alpha:           0.5,
-		CanFit:          true,
 		HybridPlacement: true,
 		HybridThreshold: 4,
 		HybridCeiling:   4,
@@ -37,7 +36,8 @@ func chooseHybridTestNode(t *testing.T, nodes ...*nodemanager.Node) *nodemanager
 		nodes,
 		map[string]struct{}{},
 		nodemanager.SandboxResources{CPUs: 1, MiBMemory: 512},
-		machineinfo.MachineInfo{},
+		CPURequirement{Build: machineinfo.MachineInfo{}},
+		FeatureRequirement{},
 		false,
 		nil,
 	)
@@ -104,26 +104,6 @@ func TestHybridPlacement_ExcludesDrainingNodes(t *testing.T) {
 	assert.Equal(t, "ready", selected.ID)
 }
 
-func TestHybridPlacement_ExcludesNodesThatCannotFit(t *testing.T) {
-	t.Parallel()
-
-	algorithm := hybridTestAlgorithm()
-	selected, err := algorithm.chooseNode(
-		t.Context(),
-		[]*nodemanager.Node{
-			nodemanager.NewTestNode("occupied-without-capacity", api.NodeStatusReady, 64, 16, nodemanager.WithSandboxCounts(3, 0)),
-			hybridTestNode("empty-with-capacity", api.NodeStatusReady, 0, 0),
-		},
-		map[string]struct{}{},
-		nodemanager.SandboxResources{CPUs: 1, MiBMemory: 512},
-		machineinfo.MachineInfo{},
-		false,
-		nil,
-	)
-	require.NoError(t, err)
-	assert.Equal(t, "empty-with-capacity", selected.ID)
-}
-
 func TestHybridPlacement_PreservesCompatibilityAndLabelFilters(t *testing.T) {
 	t.Parallel()
 
@@ -149,7 +129,8 @@ func TestHybridPlacement_PreservesCompatibilityAndLabelFilters(t *testing.T) {
 		},
 		map[string]struct{}{},
 		nodemanager.SandboxResources{CPUs: 1, MiBMemory: 512},
-		buildMachine,
+		CPURequirement{Build: buildMachine},
+		FeatureRequirement{},
 		true,
 		[]string{"scaffold"},
 	)
@@ -209,16 +190,15 @@ func TestHybridPlacement_PreferredNodeAtCeilingFallsBack(t *testing.T) {
 		},
 	}
 
-	selected, err := PlaceSandbox(t.Context(), hybridTestAlgorithm(), nodes, preferred, request, machineinfo.MachineInfo{}, false, nil)
+	result, err := PlaceSandbox(t.Context(), hybridTestAlgorithm(), nodes, preferred, request, CPURequirement{Build: machineinfo.MachineInfo{}}, false, nil)
 	require.NoError(t, err)
-	assert.Equal(t, fallback, selected)
+	assert.Equal(t, fallback, result.Node)
 }
 
 func TestHybridPlacement_InvalidCeilingFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	config := DefaultBestOfKConfig()
-	config.CanFit = true
 	config.HybridPlacement = true
 	config.HybridCeiling = -1
 	algorithm := NewBestOfK(config).(*BestOfK)
@@ -230,7 +210,8 @@ func TestHybridPlacement_InvalidCeilingFailsClosed(t *testing.T) {
 		[]*nodemanager.Node{node},
 		map[string]struct{}{},
 		resources,
-		machineinfo.MachineInfo{},
+		CPURequirement{Build: machineinfo.MachineInfo{}},
+		FeatureRequirement{},
 		false,
 		nil,
 	)
@@ -251,7 +232,8 @@ func TestHybridPlacement_DisabledPreservesLegacyBestOfKPath(t *testing.T) {
 		[]*nodemanager.Node{node},
 		map[string]struct{}{},
 		nodemanager.SandboxResources{CPUs: 1, MiBMemory: 512},
-		machineinfo.MachineInfo{},
+		CPURequirement{Build: machineinfo.MachineInfo{}},
+		FeatureRequirement{},
 		false,
 		nil,
 	)

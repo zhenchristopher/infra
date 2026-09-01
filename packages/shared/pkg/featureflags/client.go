@@ -30,6 +30,7 @@ const (
 	hybridPlacementOverrideEnv = "E2B_HYBRID_PLACEMENT_ENABLED"
 	hostAdmissionOverrideEnv   = "E2B_HOST_ADMISSION_ENABLED"
 	sandboxLimitOverrideEnv    = "E2B_SANDBOXES_PER_HOST_LIMIT"
+	buildCacheUsageOverrideEnv = "E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE"
 )
 
 type Client struct {
@@ -184,20 +185,24 @@ func (c *Client) IntFlag(ctx context.Context, flag IntFlag, contexts ...ldcontex
 }
 
 func safetyIntOverride(ctx context.Context, flag IntFlag) (int, bool) {
+	var envName string
 	switch flag.Key() {
 	case HybridPlacementThreshold.Key(), HybridPlacementCeiling.Key(), MaxSandboxesPerNode.Key():
+		envName = sandboxLimitOverrideEnv
+	case BuildCacheMaxUsagePercentage.Key():
+		envName = buildCacheUsageOverrideEnv
 	default:
 		return 0, false
 	}
 
-	raw, exists := os.LookupEnv(sandboxLimitOverrideEnv)
+	raw, exists := os.LookupEnv(envName)
 	if !exists {
 		return 0, false
 	}
 
 	value, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || value <= 0 {
-		logger.L().Warn(ctx, "invalid safety integer feature flag environment override; failing closed", zap.String("flag", flag.Key()), zap.String("environment", sandboxLimitOverrideEnv))
+		logger.L().Warn(ctx, "invalid safety integer feature flag environment override; failing closed", zap.String("flag", flag.Key()), zap.String("environment", envName))
 
 		return 0, true
 	}

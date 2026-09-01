@@ -1244,6 +1244,12 @@ func (s *Server) checkpointResumeFresh(ctx context.Context, sbx *sandbox.Sandbox
 
 		return nil, status.Errorf(codes.Internal, "error snapshotting sandbox '%s': %s", in.GetSandboxId(), err)
 	}
+	uploadHandedOff := false
+	defer func() {
+		if !uploadHandedOff {
+			res.completeUpload(context.WithoutCancel(ctx), errors.New("checkpoint abandoned before upload"))
+		}
+	}()
 
 	// Get the template for resume
 	template, err := s.templateCache.GetTemplate(ctx, in.GetBuildId(), true, false,
@@ -1327,6 +1333,7 @@ func (s *Server) checkpointResumeFresh(ctx context.Context, sbx *sandbox.Sandbox
 
 	// On upload failure, tear down the resumed sandbox — without a persisted
 	// snapshot it cannot be paused or resumed later.
+	uploadHandedOff = true
 	if err := s.runCheckpointUpload(ctx, resumedSbx, res, in, codes.Internal, func() {
 		resumedSbx.SetStopReason(sandbox.StopReasonKilled)
 		s.sandboxFactory.Sandboxes.MarkStopping(ctx, resumedSbx.Runtime.SandboxID, resumedSbx.LifecycleID)
@@ -1444,7 +1451,7 @@ func (s *Server) snapshotAndCacheSandbox(
 		return nil, fmt.Errorf("error snapshotting sandbox: %w", err)
 	}
 
-	err = s.templateCache.AddSnapshot(
+	releaseSnapshotPins, err := s.templateCache.AddSnapshot(
 		ctx,
 		meta.Template.BuildID,
 		snapshot.MemorySnapshot.DiffHeader,
@@ -1472,6 +1479,8 @@ func (s *Server) snapshotAndCacheSandbox(
 	// failed AddSnapshot doesn't leave an orphan future blocking re-registration.
 	upload, err := sandbox.NewUpload(ctx, s.uploads, snapshot, s.persistence, s.config.StorageConfig.CompressConfig, s.featureFlags, storage.UseCasePause, objectMetadata)
 	if err != nil {
+		releaseSnapshotPins()
+
 		return nil, fmt.Errorf("register upload: %w", err)
 	}
 
@@ -1482,6 +1491,8 @@ func (s *Server) snapshotAndCacheSandbox(
 	peerEnabled := s.featureFlags.BoolFlag(ctx, featureflags.PeerToPeerChunkTransferFlag)
 
 	completeUpload := func(ctx context.Context, uploadErr error) {
+		defer releaseSnapshotPins()
+
 		upload.Finish(ctx, uploadErr)
 
 		if !peerEnabled {
