@@ -86,6 +86,12 @@ variable "client_proxy_port" {
   })
 }
 
+variable "session_security_policy_rules_managed_externally" {
+  description = "Whether the session Cloud Armor request throttle rules are managed outside the E2B Terraform stack."
+  type        = bool
+  default     = false
+}
+
 variable "nomad_port" {
   type = number
 }

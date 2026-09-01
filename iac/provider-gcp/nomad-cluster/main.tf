@@ -118,8 +118,9 @@ module "network" {
   additional_domains                      = var.additional_domains
   additional_api_paths_handled_by_ingress = var.additional_api_paths_handled_by_ingress
 
-  client_proxy_port        = var.client_proxy_port
-  client_proxy_health_port = var.client_proxy_health_port
+  client_proxy_port                                = var.client_proxy_port
+  client_proxy_health_port                         = var.client_proxy_health_port
+  session_security_policy_rules_managed_externally = var.session_security_policy_rules_managed_externally
 
   api_instance_group        = google_compute_instance_group_manager.api_pool.instance_group
   extra_api_instance_groups = var.extra_api_instance_groups

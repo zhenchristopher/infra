@@ -307,8 +307,9 @@ module "cluster" {
   api_nat_ips              = var.api_nat_ips
   api_nat_min_ports_per_vm = var.api_nat_min_ports_per_vm
 
-  client_proxy_port        = var.client_proxy_port
-  client_proxy_health_port = var.client_proxy_health_port
+  client_proxy_port                                = var.client_proxy_port
+  client_proxy_health_port                         = var.client_proxy_health_port
+  session_security_policy_rules_managed_externally = var.session_security_policy_rules_managed_externally
 
   ingress_port                 = var.ingress_port
   api_port                     = var.api_port

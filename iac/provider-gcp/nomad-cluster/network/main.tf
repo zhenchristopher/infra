@@ -646,6 +646,12 @@ resource "google_compute_security_policy_rule" "api-throttling-ip" {
 }
 
 resource "google_compute_security_policy_rule" "sandbox-throttling-host" {
+  count = var.session_security_policy_rules_managed_externally ? 0 : 1
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   security_policy = google_compute_security_policy.default["session"].name
   description     = "WS envd connection requests per sandbox"
 
@@ -708,6 +714,12 @@ resource "google_compute_security_policy_rule" "sandbox-routing-headers-log" {
 }
 
 resource "google_compute_security_policy_rule" "sandbox-throttling-ip" {
+  count = var.session_security_policy_rules_managed_externally ? 0 : 1
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   security_policy = google_compute_security_policy.default["session"].name
   action          = "throttle"
   priority        = "500"
