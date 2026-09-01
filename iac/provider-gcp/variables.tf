@@ -820,6 +820,11 @@ variable "api_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
+
+  validation {
+    condition     = alltrue([for name in keys(var.api_env_vars) : contains(["E2B_HYBRID_PLACEMENT_ENABLED", "E2B_SANDBOXES_PER_HOST_LIMIT"], name)])
+    error_message = "api_env_vars may only set E2B_HYBRID_PLACEMENT_ENABLED and E2B_SANDBOXES_PER_HOST_LIMIT."
+  }
 }
 
 variable "api_db_migrator_env_vars" {

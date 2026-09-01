@@ -29,6 +29,7 @@ const waitForInit = 5 * time.Second
 const (
 	hybridPlacementOverrideEnv = "E2B_HYBRID_PLACEMENT_ENABLED"
 	hostAdmissionOverrideEnv   = "E2B_HOST_ADMISSION_ENABLED"
+	sandboxLimitOverrideEnv    = "E2B_SANDBOXES_PER_HOST_LIMIT"
 )
 
 type Client struct {
@@ -175,7 +176,33 @@ func (c *Client) WatchJSONFlag(ctx context.Context, flag JSONFlag, contexts ...l
 }
 
 func (c *Client) IntFlag(ctx context.Context, flag IntFlag, contexts ...ldcontext.Context) int {
+	if value, ok := safetyIntOverride(ctx, flag); ok {
+		return value
+	}
+
 	return getFlag(ctx, c.ld, c.ld.IntVariationCtx, flag, c.allContexts(ctx, contexts))
+}
+
+func safetyIntOverride(ctx context.Context, flag IntFlag) (int, bool) {
+	switch flag.Key() {
+	case HybridPlacementThreshold.Key(), HybridPlacementCeiling.Key(), MaxSandboxesPerNode.Key():
+	default:
+		return 0, false
+	}
+
+	raw, exists := os.LookupEnv(sandboxLimitOverrideEnv)
+	if !exists {
+		return 0, false
+	}
+
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		logger.L().Warn(ctx, "invalid safety integer feature flag environment override; failing closed", zap.String("flag", flag.Key()), zap.String("environment", sandboxLimitOverrideEnv))
+
+		return 0, true
+	}
+
+	return value, true
 }
 
 func (c *Client) StringFlag(ctx context.Context, flag StringFlag, contexts ...ldcontext.Context) string {
