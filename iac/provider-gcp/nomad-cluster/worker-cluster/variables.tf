@@ -86,6 +86,12 @@ variable "network_name" {
   type        = string
 }
 
+variable "private_nodes_enabled" {
+  description = "Whether E2B compute nodes use private-only NICs."
+  type        = bool
+  default     = false
+}
+
 variable "cluster_tag_name" {
   description = "Network tag applied to cluster instances for firewall rules"
   type        = string

@@ -57,7 +57,7 @@ resource "google_compute_instance_group_manager" "clickhouse_pool" {
   # Server is a stateful cluster, so the update strategy used to roll out a new GCE Instance Template must be
   # a rolling update.
   update_policy {
-    type                  = var.environment == "dev" ? "PROACTIVE" : "OPPORTUNISTIC"
+    type                  = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
     minimal_action        = "REPLACE" # To prevent having stale data from previous versions of startup script
     max_unavailable_fixed = 1
     replacement_method    = "RECREATE"
@@ -141,7 +141,10 @@ resource "google_compute_instance_template" "clickhouse" {
   network_interface {
     network = var.network_name
 
-    access_config {}
+    dynamic "access_config" {
+      for_each = var.private_nodes_enabled ? [] : ["public_ip"]
+      content {}
+    }
   }
 
   # For a full list of oAuth 2.0 Scopes, see https://developers.google.com/identity/protocols/googlescopes

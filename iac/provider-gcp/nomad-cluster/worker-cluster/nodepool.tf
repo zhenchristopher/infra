@@ -125,7 +125,7 @@ resource "google_compute_region_instance_group_manager" "pool" {
   # Server is a stateful cluster, so the update strategy used to roll out a new GCE Instance Template must be
   # a rolling update.
   update_policy {
-    type                         = var.environment == "dev" ? "PROACTIVE" : "OPPORTUNISTIC"
+    type                         = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
     minimal_action               = "REPLACE"
     max_surge_fixed              = 10
     max_surge_percent            = null
@@ -212,7 +212,7 @@ resource "google_compute_instance_template" "template" {
     nic_type = var.network_interface_type
 
     dynamic "access_config" {
-      for_each = ["public_ip"]
+      for_each = var.private_nodes_enabled ? [] : ["public_ip"]
       content {}
     }
   }

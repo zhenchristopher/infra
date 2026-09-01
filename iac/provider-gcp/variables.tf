@@ -39,6 +39,12 @@ variable "api_use_nat" {
   default     = false
 }
 
+variable "private_nodes_enabled" {
+  type        = bool
+  description = "Whether E2B compute nodes use private-only NICs and IAP-only operator access."
+  default     = false
+}
+
 variable "api_nat_ips" {
   type        = list(string)
   description = "List of names for static IP addresses to use for NAT. If empty and api_use_nat is true, IPs will be created automatically."

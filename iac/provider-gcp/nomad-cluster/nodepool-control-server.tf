@@ -54,7 +54,7 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
   # Proactive rolling replacements of servers can cause missed client heartbeats and secret revocations:
   # https://github.com/hashicorp/nomad/issues/9390
   update_policy {
-    type           = var.environment == "dev" ? "PROACTIVE" : "OPPORTUNISTIC"
+    type           = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
     minimal_action = "REPLACE"
 
     // Keep PROACTIVE redistribution to maintain even server distribution across zones for Raft quorum resilience.
@@ -126,7 +126,7 @@ resource "google_compute_instance_template" "server" {
     # Create access config dynamically. If a public ip is requested, we just need the empty `access_config` block
     # to automatically assign an external IP address.
     dynamic "access_config" {
-      for_each = ["public_ip"]
+      for_each = var.private_nodes_enabled ? [] : ["public_ip"]
       content {}
     }
   }

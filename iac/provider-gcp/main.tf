@@ -306,6 +306,7 @@ module "cluster" {
   api_use_nat              = var.api_use_nat
   api_nat_ips              = var.api_nat_ips
   api_nat_min_ports_per_vm = var.api_nat_min_ports_per_vm
+  private_nodes_enabled    = var.private_nodes_enabled
 
   client_proxy_port                                = var.client_proxy_port
   client_proxy_health_port                         = var.client_proxy_health_port

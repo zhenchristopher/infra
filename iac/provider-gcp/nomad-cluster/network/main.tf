@@ -530,7 +530,7 @@ resource "google_compute_firewall" "client_proxy_firewall_ingress" {
 }
 
 resource "google_compute_firewall" "internal_remote_connection_firewall_ingress" {
-  name    = "${var.prefix}${var.cluster_tag_name}-internal-remote-connection-firewall-ingress"
+  name    = var.private_nodes_enabled || var.environment != "dev" ? "${var.prefix}${var.cluster_tag_name}-iap-remote-connection-firewall-ingress" : "${var.prefix}${var.cluster_tag_name}-internal-remote-connection-firewall-ingress"
   network = var.network_name
 
   allow {
@@ -543,7 +543,11 @@ resource "google_compute_firewall" "internal_remote_connection_firewall_ingress"
   direction   = "INGRESS"
   target_tags = [var.cluster_tag_name]
   # https://googlecloudplatform.github.io/iap-desktop/setup-iap/
-  source_ranges = var.environment == "dev" ? ["0.0.0.0/0"] : ["35.235.240.0/20"]
+  source_ranges = var.private_nodes_enabled || var.environment != "dev" ? ["35.235.240.0/20"] : ["0.0.0.0/0"]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "google_compute_firewall" "remote_connection_firewall_ingress" {
@@ -558,7 +562,7 @@ resource "google_compute_firewall" "remote_connection_firewall_ingress" {
 
   #  Metadata fields can be found here: https://cloud.google.com/firewall/docs/firewall-rules-logging#log-format
   dynamic "log_config" {
-    for_each = var.environment != "dev" ? [1] : []
+    for_each = var.private_nodes_enabled || var.environment != "dev" ? [1] : []
     content {
       metadata = "EXCLUDE_ALL_METADATA"
     }
