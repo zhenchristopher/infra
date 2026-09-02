@@ -66,10 +66,6 @@ variable "api_env_vars" {
   default   = {}
   sensitive = true
 
-  validation {
-    condition     = alltrue([for name in keys(var.api_env_vars) : contains(["E2B_HYBRID_PLACEMENT_ENABLED", "E2B_SANDBOXES_PER_HOST_LIMIT"], name)])
-    error_message = "api_env_vars may only set E2B_HYBRID_PLACEMENT_ENABLED and E2B_SANDBOXES_PER_HOST_LIMIT."
-  }
 }
 
 variable "api_db_migrator_env_vars" {
@@ -501,10 +497,6 @@ variable "orchestrator_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
-  validation {
-    condition     = alltrue([for name in keys(var.orchestrator_env_vars) : contains(["E2B_HOST_ADMISSION_ENABLED", "E2B_SANDBOXES_PER_HOST_LIMIT", "E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE"], name)])
-    error_message = "orchestrator_env_vars may only set E2B_HOST_ADMISSION_ENABLED, E2B_SANDBOXES_PER_HOST_LIMIT, and E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE."
-  }
 }
 
 
