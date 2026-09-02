@@ -38,6 +38,7 @@ resource "terraform_data" "canary_isolation" {
     precondition {
       condition = !var.same_project_canary_enabled || (
         var.environment == "dev" &&
+        var.private_nodes_enabled &&
         var.gcp_project_id == "ashler-platform" &&
         var.network_name == "default" &&
         var.prefix == "cny-" &&
@@ -52,7 +53,7 @@ resource "terraform_data" "canary_isolation" {
         var.session_security_policy_allowed_source_ranges[0] == "34.139.212.107/32" &&
         var.postgres_connection_string_secret_id == "cny-postgres-connection-string"
       )
-      error_message = "canary must use the locked Ashler same-project isolation identity and disable shared project-service ownership."
+      error_message = "canary must use private-only nodes with the locked Ashler same-project isolation identity and disable shared project-service ownership."
     }
   }
 }
