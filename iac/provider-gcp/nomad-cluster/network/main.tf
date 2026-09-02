@@ -37,65 +37,67 @@ locals {
   subdomain    = local.domain_info[var.domain_name].prefix
   root_domain  = local.domain_info[var.domain_name].root_domain
 
-  backends = {
-    session = {
-      protocol                        = "HTTP"
-      port                            = var.client_proxy_port.port
-      port_name                       = var.client_proxy_port.name
-      timeout_sec                     = 86400
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path       = var.client_proxy_health_port.path
-        port               = var.client_proxy_health_port.port
-        timeout_sec        = 3
-        check_interval_sec = 3
+  backends = merge(
+    {
+      session = {
+        protocol                        = "HTTP"
+        port                            = var.client_proxy_port.port
+        port_name                       = var.client_proxy_port.name
+        timeout_sec                     = 86400
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path       = var.client_proxy_health_port.path
+          port               = var.client_proxy_health_port.port
+          timeout_sec        = 3
+          check_interval_sec = 3
+        }
+        groups = [{ group = var.api_instance_group }]
       }
-      groups = [{ group = var.api_instance_group }]
-    }
-    api = {
-      protocol                        = "HTTP"
-      port                            = var.api_port.port
-      port_name                       = var.api_port.name
-      timeout_sec                     = 80
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path       = var.api_port.health_path
-        port               = var.api_port.port
-        timeout_sec        = 3
-        check_interval_sec = 3
+      api = {
+        protocol                        = "HTTP"
+        port                            = var.api_port.port
+        port_name                       = var.api_port.name
+        timeout_sec                     = 80
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path       = var.api_port.health_path
+          port               = var.api_port.port
+          timeout_sec        = 3
+          check_interval_sec = 3
+        }
+        groups = concat(
+          [{ group = var.api_instance_group }],
+          [for g in var.extra_api_instance_groups : { group = g }],
+        )
       }
-      groups = concat(
-        [{ group = var.api_instance_group }],
-        [for g in var.extra_api_instance_groups : { group = g }],
-      )
-    }
-    docker-reverse-proxy = {
-      protocol                        = "HTTP"
-      port                            = var.docker_reverse_proxy_port.port
-      port_name                       = var.docker_reverse_proxy_port.name
-      timeout_sec                     = 30
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path = var.docker_reverse_proxy_port.health_path
-        port         = var.docker_reverse_proxy_port.port
+      nomad = {
+        protocol                        = "HTTP"
+        port                            = 80
+        port_name                       = "nomad"
+        timeout_sec                     = 10
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path = "/v1/status/peers"
+          port         = var.nomad_port
+        }
+        groups = [{ group = var.server_instance_group }]
       }
-      groups = [
-        { group = var.api_instance_group },
-      ]
-    }
-    nomad = {
-      protocol                        = "HTTP"
-      port                            = 80
-      port_name                       = "nomad"
-      timeout_sec                     = 10
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path = "/v1/status/peers"
-        port         = var.nomad_port
+    },
+    var.docker_reverse_proxy_enabled ? {
+      docker-reverse-proxy = {
+        protocol                        = "HTTP"
+        port                            = var.docker_reverse_proxy_port.port
+        port_name                       = var.docker_reverse_proxy_port.name
+        timeout_sec                     = 30
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path = var.docker_reverse_proxy_port.health_path
+          port         = var.docker_reverse_proxy_port.port
+        }
+        groups = [{ group = var.api_instance_group }]
       }
-      groups = [{ group = var.server_instance_group }]
-    }
-  }
+    } : {},
+  )
   # The session backend serves wildcard sandbox traffic, including /ws.
   # Before routing session-paths to H2C, keep WebSocket upgrade paths on
   # the HTTP/1.1 backend or split them into a separate backend service.
@@ -261,9 +263,13 @@ resource "google_compute_url_map" "orch_map" {
     path_matcher = "api-paths"
   }
 
-  host_rule {
-    hosts        = concat(["docker.${var.domain_name}"], [for d in var.additional_domains : "docker.${d}"])
-    path_matcher = "docker-reverse-proxy-paths"
+  dynamic "host_rule" {
+    for_each = var.docker_reverse_proxy_enabled ? [true] : []
+
+    content {
+      hosts        = concat(["docker.${var.domain_name}"], [for d in var.additional_domains : "docker.${d}"])
+      path_matcher = "docker-reverse-proxy-paths"
+    }
   }
 
   host_rule {
@@ -300,9 +306,13 @@ resource "google_compute_url_map" "orch_map" {
     }
   }
 
-  path_matcher {
-    name            = "docker-reverse-proxy-paths"
-    default_service = google_compute_backend_service.default["docker-reverse-proxy"].self_link
+  dynamic "path_matcher" {
+    for_each = var.docker_reverse_proxy_enabled ? [true] : []
+
+    content {
+      name            = "docker-reverse-proxy-paths"
+      default_service = google_compute_backend_service.default["docker-reverse-proxy"].self_link
+    }
   }
 
   path_matcher {

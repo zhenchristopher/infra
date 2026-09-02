@@ -115,6 +115,7 @@ module "network" {
 
   ingress_port                            = var.ingress_port
   api_port                                = var.api_port
+  docker_reverse_proxy_enabled            = var.docker_reverse_proxy_enabled
   docker_reverse_proxy_port               = var.docker_reverse_proxy_port
   network_name                            = var.network_name
   domain_name                             = var.domain_name

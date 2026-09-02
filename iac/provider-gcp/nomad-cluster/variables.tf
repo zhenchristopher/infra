@@ -108,6 +108,11 @@ variable "ingress_port" {
   })
 }
 
+variable "docker_reverse_proxy_enabled" {
+  type    = bool
+  default = true
+}
+
 variable "docker_reverse_proxy_port" {
   type = object({
     name        = string
