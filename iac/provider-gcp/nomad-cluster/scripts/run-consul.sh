@@ -407,14 +407,8 @@ function setup_dns_resolving {
     sleep 1
   done
 
-  if (($(consul acl policy read -name="dns-request-policy" -token="${consul_token}" -format=json | jq '.ID' | wc -l) > 0)); then
-    log_info "DNS Request Policy already exists"
-    return
-  else
-    # Based on https://developer.hashicorp.com/consul/tutorials/security/access-control-setup-production#token-for-dns
-    # Token is created on the leader node, so there's no problem with duplication
-    touch dns-request-policy.hcl
-    cat <<EOF >dns-request-policy.hcl
+  # Based on https://developer.hashicorp.com/consul/tutorials/security/access-control-setup-production#token-for-dns
+  cat <<EOF >dns-request-policy.hcl
 node_prefix "" {
   policy = "read"
 }
@@ -423,19 +417,33 @@ service_prefix "" {
 }
 EOF
 
-    touch register-service-policy.hcl
-    cat <<EOF >register-service-policy.hcl
+  cat <<EOF >register-service-policy.hcl
+node_prefix "" {
+  policy = "write"
+}
 service_prefix "" {
   policy = "write"
 }
 EOF
-      consul acl policy create -name "dns-request-policy" -rules @dns-request-policy.hcl -token="${consul_token}"
-      consul acl policy create -name "register-service-policy" -rules @register-service-policy.hcl -token="${consul_token}"
-      consul acl token create -secret "${dns_request_token}" -description "Client Token" -policy-name "dns-request-policy" -policy-name "register-service-policy" -token="${consul_token}"
-      rm dns-request-policy.hcl
-      rm register-service-policy.hcl
+
+  if consul acl policy read -name="dns-request-policy" -token="${consul_token}" >/dev/null 2>&1; then
+    consul acl policy update -name="dns-request-policy" -rules @dns-request-policy.hcl -token="${consul_token}"
+  else
+    consul acl policy create -name="dns-request-policy" -rules @dns-request-policy.hcl -token="${consul_token}"
   fi
 
+  if consul acl policy read -name="register-service-policy" -token="${consul_token}" >/dev/null 2>&1; then
+    consul acl policy update -name="register-service-policy" -rules @register-service-policy.hcl -token="${consul_token}"
+  else
+    consul acl policy create -name="register-service-policy" -rules @register-service-policy.hcl -token="${consul_token}"
+  fi
+
+  if ! consul acl token read -self -token="${dns_request_token}" >/dev/null 2>&1; then
+    consul acl token create -secret "${dns_request_token}" -description "Client Token" -policy-name "dns-request-policy" -policy-name "register-service-policy" -token="${consul_token}"
+  fi
+
+  rm dns-request-policy.hcl
+  rm register-service-policy.hcl
 
   consul acl set-agent-token -token="${consul_token}" default "${dns_request_token}"
   log_info "Client token set"
