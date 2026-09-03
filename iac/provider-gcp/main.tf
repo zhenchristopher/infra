@@ -40,6 +40,8 @@ resource "terraform_data" "canary_isolation" {
         var.environment == "dev" &&
         var.private_nodes_enabled &&
         var.gcp_project_id == "ashler-platform" &&
+        var.gcp_region == "us-east1" &&
+        var.gcp_zone == "us-east1-b" &&
         var.network_name == "default" &&
         var.prefix == "cny-" &&
         var.bucket_prefix == "ashler-platform-e2b-canary-" &&
