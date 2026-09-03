@@ -400,6 +400,11 @@ function bootstrap {
 function setup_dns_resolving {
   local consul_token="$1"
   local dns_request_token="$2"
+  local restore_xtrace="false"
+  if [[ "$-" == *x* ]]; then
+    restore_xtrace="true"
+    set +x
+  fi
 
   until consul info -token="${consul_token}" > /dev/null 2>&1;
   do
@@ -407,46 +412,89 @@ function setup_dns_resolving {
     sleep 1
   done
 
-  # Based on https://developer.hashicorp.com/consul/tutorials/security/access-control-setup-production#token-for-dns
-  cat <<EOF >dns-request-policy.hcl
-node_prefix "" {
-  policy = "read"
-}
-service_prefix "" {
-  policy = "read"
-}
-EOF
+  local agent_self
+  local agent_node_name
+  local agent_datacenter
+  local agent_description
+  local agent_matches
+  local agent_match_count
+  local agent_token
+  local agent_accessor
+  agent_self=$(curl --silent --show-error --fail --header "X-Consul-Token: ${consul_token}" http://127.0.0.1:8500/v1/agent/self)
+  agent_node_name=$(jq -er '.Config.NodeName | select(type == "string" and length > 0)' <<<"${agent_self}")
+  agent_datacenter=$(jq -er '.Config.Datacenter | select(type == "string" and length > 0)' <<<"${agent_self}")
+  agent_description="Agent token for ${agent_node_name}:${agent_datacenter}"
 
-  cat <<EOF >register-service-policy.hcl
+  agent_matches=$(consul acl token list -token="${consul_token}" -format=json | jq -c --arg description "${agent_description}" '[.[] | select(.Description == $description)]')
+  agent_match_count=$(jq 'length' <<<"${agent_matches}")
+  if [[ "${agent_match_count}" -gt 1 ]]; then
+    log_error "Multiple Consul agent tokens match ${agent_node_name}:${agent_datacenter}"
+    exit 1
+  fi
+  if [[ "${agent_match_count}" -eq 1 ]]; then
+    agent_accessor=$(jq -er '.[0].AccessorID' <<<"${agent_matches}")
+    agent_token=$(consul acl token read -accessor-id="${agent_accessor}" -token="${consul_token}" -format=json)
+    if ! jq -e --arg node "${agent_node_name}" --arg dc "${agent_datacenter}" '
+      (.NodeIdentities == [{"NodeName": $node, "Datacenter": $dc}]) and
+      ((.Policies // []) | length == 0) and
+      ((.Roles // []) | length == 0) and
+      ((.ServiceIdentities // []) | length == 0) and
+      ((.TemplatedPolicies // []) | length == 0)
+    ' <<<"${agent_token}" >/dev/null; then
+      consul acl token delete -accessor-id="${agent_accessor}" -token="${consul_token}"
+      agent_token=""
+    fi
+  fi
+  if [[ -z "${agent_token:-}" ]]; then
+    agent_token=$(consul acl token create \
+      -description="${agent_description}" \
+      -node-identity="${agent_node_name}:${agent_datacenter}" \
+      -token="${consul_token}" \
+      -format=json)
+  fi
+
+  local dns_policy_file
+  dns_policy_file=$(mktemp)
+  cat <<EOF >"${dns_policy_file}"
 node_prefix "" {
-  policy = "write"
+  policy = "read"
 }
 service_prefix "" {
-  policy = "write"
+  policy = "read"
 }
 EOF
 
   if consul acl policy read -name="dns-request-policy" -token="${consul_token}" >/dev/null 2>&1; then
-    consul acl policy update -name="dns-request-policy" -rules @dns-request-policy.hcl -token="${consul_token}"
+    consul acl policy update -name="dns-request-policy" -rules @"${dns_policy_file}" -token="${consul_token}"
   else
-    consul acl policy create -name="dns-request-policy" -rules @dns-request-policy.hcl -token="${consul_token}"
+    consul acl policy create -name="dns-request-policy" -rules @"${dns_policy_file}" -token="${consul_token}"
   fi
+  rm "${dns_policy_file}"
 
-  if consul acl policy read -name="register-service-policy" -token="${consul_token}" >/dev/null 2>&1; then
-    consul acl policy update -name="register-service-policy" -rules @register-service-policy.hcl -token="${consul_token}"
+  local dns_token
+  local dns_accessor
+  if consul acl token read -self -token="${dns_request_token}" -format=json >/dev/null 2>&1; then
+    dns_token=$(consul acl token read -self -token="${dns_request_token}" -format=json)
+    dns_accessor=$(jq -er '.AccessorID' <<<"${dns_token}")
+    consul acl token update \
+      -accessor-id="${dns_accessor}" \
+      -description="DNS Request Token" \
+      -policy-name="dns-request-policy" \
+      -token="${consul_token}" >/dev/null
   else
-    consul acl policy create -name="register-service-policy" -rules @register-service-policy.hcl -token="${consul_token}"
+    consul acl token create \
+      -secret="${dns_request_token}" \
+      -description="DNS Request Token" \
+      -policy-name="dns-request-policy" \
+      -token="${consul_token}" >/dev/null
   fi
-
-  if ! consul acl token read -self -token="${dns_request_token}" >/dev/null 2>&1; then
-    consul acl token create -secret "${dns_request_token}" -description "Client Token" -policy-name "dns-request-policy" -policy-name "register-service-policy" -token="${consul_token}"
-  fi
-
-  rm dns-request-policy.hcl
-  rm register-service-policy.hcl
 
   consul acl set-agent-token -token="${consul_token}" default "${dns_request_token}"
-  log_info "Client token set"
+  consul acl set-agent-token -token="${consul_token}" agent "$(jq -er '.SecretID' <<<"${agent_token}")"
+  if [[ "${restore_xtrace}" == "true" ]]; then
+    set -x
+  fi
+  log_info "DNS and node-identity agent tokens set"
 }
 
 # Based on: http://unix.stackexchange.com/a/7732/215969
