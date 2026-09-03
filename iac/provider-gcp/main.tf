@@ -436,10 +436,11 @@ module "k8s_apps" {
 module "nomad" {
   source = "./nomad"
 
-  prefix         = var.prefix
-  gcp_project_id = var.gcp_project_id
-  gcp_region     = var.gcp_region
-  gcp_zone       = var.gcp_zone
+  prefix                        = var.prefix
+  gcp_project_id                = var.gcp_project_id
+  clickhouse_service_account_id = var.clickhouse_service_account_id
+  gcp_region                    = var.gcp_region
+  gcp_zone                      = var.gcp_zone
 
   consul_acl_token_secret = module.init.consul_acl_token_secret
   nomad_acl_token_secret  = module.init.nomad_acl_token_secret

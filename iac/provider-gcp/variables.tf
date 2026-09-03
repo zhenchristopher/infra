@@ -454,6 +454,34 @@ variable "prefix" {
   default     = "e2b-"
 }
 
+variable "docker_registry_service_account_id" {
+  type        = string
+  description = "Stable account ID for the Docker reverse proxy service account."
+  default     = ""
+
+  validation {
+    condition = (
+      var.docker_registry_service_account_id == "" ||
+      (length(var.docker_registry_service_account_id) >= 6 && length(var.docker_registry_service_account_id) <= 30)
+    )
+    error_message = "docker_registry_service_account_id must be empty or between 6 and 30 characters."
+  }
+}
+
+variable "clickhouse_service_account_id" {
+  type        = string
+  description = "Stable account ID for the ClickHouse backup service account."
+  default     = ""
+
+  validation {
+    condition = (
+      var.clickhouse_service_account_id == "" ||
+      (length(var.clickhouse_service_account_id) >= 6 && length(var.clickhouse_service_account_id) <= 30)
+    )
+    error_message = "clickhouse_service_account_id must be empty or between 6 and 30 characters."
+  }
+}
+
 variable "manage_project_services" {
   type        = bool
   description = "Whether this stack owns shared project API enablement."

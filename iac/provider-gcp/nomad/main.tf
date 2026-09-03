@@ -479,7 +479,7 @@ resource "google_secret_manager_secret_version" "clickhouse_server_secret_value"
 }
 
 resource "google_service_account" "clickhouse_service_account" {
-  account_id   = "${var.prefix}clickhouse-service-account"
+  account_id   = var.clickhouse_service_account_id == "" ? "${var.prefix}clickhouse-service-account" : var.clickhouse_service_account_id
   display_name = "${var.prefix}clickhouse-service-account"
 }
 

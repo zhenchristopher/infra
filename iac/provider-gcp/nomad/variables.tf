@@ -2,6 +2,10 @@ variable "prefix" {
   type = string
 }
 
+variable "clickhouse_service_account_id" {
+  type = string
+}
+
 variable "gcp_zone" {
   type = string
 }
