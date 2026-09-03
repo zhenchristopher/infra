@@ -420,6 +420,11 @@ function setup_dns_resolving {
   local agent_match_count
   local agent_token
   local agent_accessor
+  local stale_agent_token=""
+  local stale_agent_accessor=""
+  local stale_agent_secret=""
+  local replacement_agent_accessor=""
+  local replacement_agent_secret=""
   agent_self=$(curl --silent --show-error --fail --header "X-Consul-Token: ${consul_token}" http://127.0.0.1:8500/v1/agent/self)
   agent_node_name=$(jq -er '.Config.NodeName | select(type == "string" and length > 0)' <<<"${agent_self}")
   agent_datacenter=$(jq -er '.Config.Datacenter | select(type == "string" and length > 0)' <<<"${agent_self}")
@@ -441,7 +446,13 @@ function setup_dns_resolving {
       ((.ServiceIdentities // []) | length == 0) and
       ((.TemplatedPolicies // []) | length == 0)
     ' <<<"${agent_token}" >/dev/null; then
-      consul acl token delete -accessor-id="${agent_accessor}" -token="${consul_token}"
+      stale_agent_token="${agent_token}"
+      stale_agent_accessor="${agent_accessor}"
+      stale_agent_secret=$(jq -er '.SecretID' <<<"${stale_agent_token}")
+      consul acl token update \
+        -accessor-id="${stale_agent_accessor}" \
+        -description="Obsolete ${agent_description} ${stale_agent_accessor}" \
+        -token="${consul_token}" >/dev/null
       agent_token=""
     fi
   fi
@@ -451,6 +462,8 @@ function setup_dns_resolving {
       -node-identity="${agent_node_name}:${agent_datacenter}" \
       -token="${consul_token}" \
       -format=json)
+    replacement_agent_accessor=$(jq -er '.AccessorID' <<<"${agent_token}")
+    replacement_agent_secret=$(jq -er '.SecretID' <<<"${agent_token}")
   fi
 
   local dns_policy_file
@@ -490,7 +503,24 @@ EOF
   fi
 
   consul acl set-agent-token -token="${consul_token}" default "${dns_request_token}"
-  consul acl set-agent-token -token="${consul_token}" agent "$(jq -er '.SecretID' <<<"${agent_token}")"
+  if [[ -n "${replacement_agent_secret}" ]]; then
+    if ! consul acl set-agent-token -token="${consul_token}" agent "${replacement_agent_secret}" ||
+      ! consul acl token read -self -token="${replacement_agent_secret}" -format=json |
+        jq -e --arg accessor "${replacement_agent_accessor}" '.AccessorID == $accessor' >/dev/null
+    then
+      if [[ -n "${stale_agent_secret}" ]]; then
+        consul acl set-agent-token -token="${consul_token}" agent "${stale_agent_secret}" || true
+      fi
+      consul acl token delete -accessor-id="${replacement_agent_accessor}" -token="${consul_token}" || true
+      log_error "Failed to install and verify replacement Consul agent token"
+      exit 1
+    fi
+    if [[ -n "${stale_agent_accessor}" ]]; then
+      consul acl token delete -accessor-id="${stale_agent_accessor}" -token="${consul_token}"
+    fi
+  else
+    consul acl set-agent-token -token="${consul_token}" agent "$(jq -er '.SecretID' <<<"${agent_token}")"
+  fi
   if [[ "${restore_xtrace}" == "true" ]]; then
     set -x
   fi

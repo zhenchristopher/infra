@@ -144,7 +144,8 @@ resource "google_compute_region_instance_group_manager" "pool" {
 }
 
 data "google_compute_image" "source_image" {
-  family = var.image_family
+  name   = var.image_name != "" ? var.image_name : null
+  family = var.image_name == "" ? var.image_family : null
 }
 
 resource "google_compute_instance_template" "template" {

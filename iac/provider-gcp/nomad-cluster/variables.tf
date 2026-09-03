@@ -18,6 +18,11 @@ variable "server_image_family" {
   default = "e2b-orch"
 }
 
+variable "server_image_name" {
+  type    = string
+  default = ""
+}
+
 variable "server_cluster_name" {
   type    = string
   default = "orch-server"
@@ -34,6 +39,11 @@ variable "server_machine_type" {
 variable "api_image_family" {
   type    = string
   default = "e2b-orch"
+}
+
+variable "api_image_name" {
+  type    = string
+  default = ""
 }
 
 variable "api_cluster_size" {
@@ -55,6 +65,11 @@ variable "loki_machine_type" {
 variable "build_image_family" {
   type    = string
   default = "e2b-orch"
+}
+
+variable "build_image_name" {
+  type    = string
+  default = ""
 }
 
 variable "client_proxy_health_port" {
@@ -124,6 +139,11 @@ variable "docker_reverse_proxy_port" {
 variable "client_image_family" {
   type    = string
   default = "e2b-orch"
+}
+
+variable "client_image_name" {
+  type    = string
+  default = ""
 }
 
 variable "client_cluster_name" {

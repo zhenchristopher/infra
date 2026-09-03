@@ -86,7 +86,8 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
 }
 
 data "google_compute_image" "server_source_image" {
-  family = var.server_image_family
+  name   = var.server_image_name != "" ? var.server_image_name : null
+  family = var.server_image_name == "" ? var.server_image_family : null
 }
 
 resource "google_compute_instance_template" "server" {

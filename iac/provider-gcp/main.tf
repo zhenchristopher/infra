@@ -46,14 +46,17 @@ resource "terraform_data" "canary_isolation" {
         var.prefix == "cny-" &&
         var.bucket_prefix == "ashler-platform-e2b-canary-" &&
         var.domain_name == "e2b-canary.ashler.com" &&
-        var.orchestrator_image_family == "cny-orch" &&
+        var.orchestrator_image_name == "cny-orch-2026-09-02-01-20-34" &&
+        var.docker_registry_service_account_id == "cny-docker-reverse-proxy-sa" &&
+        var.clickhouse_service_account_id == "cny-clickhouse-service-account" &&
         !var.manage_project_services &&
         var.orchestration_repository_id == "cny-e2b-orchestration" &&
         var.cloudflare_api_token_secret_id == "ashler-e2b-dev-cloudflare-api-token" &&
         !var.session_security_policy_rules_managed_externally &&
         length(var.session_security_policy_allowed_source_ranges) == 1 &&
         var.session_security_policy_allowed_source_ranges[0] == "34.139.212.107/32" &&
-        var.postgres_connection_string_secret_id == "cny-postgres-connection-string"
+        var.postgres_connection_string_secret_id == "cny-postgres-connection-string" &&
+        alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 1])
       )
       error_message = "canary must use private-only nodes with the locked Ashler same-project isolation identity and disable shared project-service ownership."
     }
@@ -316,10 +319,10 @@ module "cluster" {
   gcp_zone                         = var.gcp_zone
   google_service_account_key       = module.init.google_service_account_key
   enable_gcp_telemetry_metrics     = var.enable_gcp_telemetry_metrics
-  server_image_family              = var.orchestrator_image_family
-  api_image_family                 = var.orchestrator_image_family
-  build_image_family               = var.orchestrator_image_family
-  client_image_family              = var.orchestrator_image_family
+  server_image_name                = var.orchestrator_image_name
+  api_image_name                   = var.orchestrator_image_name
+  build_image_name                 = var.orchestrator_image_name
+  client_image_name                = var.orchestrator_image_name
   network_name                     = var.network_name
 
   build_clusters_config  = var.build_clusters_config

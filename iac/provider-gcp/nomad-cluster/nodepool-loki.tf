@@ -73,7 +73,8 @@ resource "google_compute_instance_group_manager" "loki_pool" {
 }
 
 data "google_compute_image" "loki_source_image" {
-  family = var.api_image_family
+  name   = var.api_image_name != "" ? var.api_image_name : null
+  family = var.api_image_name == "" ? var.api_image_family : null
 }
 
 resource "google_compute_instance_template" "loki" {

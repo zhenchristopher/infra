@@ -69,6 +69,12 @@ variable "image_family" {
   type        = string
 }
 
+variable "image_name" {
+  description = "Immutable GCE image name for the instances when set"
+  type        = string
+  default     = ""
+}
+
 # GCP CONFIGURATION
 
 variable "gcp_region" {

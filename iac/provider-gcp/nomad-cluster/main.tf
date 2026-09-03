@@ -172,6 +172,7 @@ module "build_cluster" {
 
   cluster_name              = "${var.prefix}${var.build_cluster_name}-${each.key}"
   image_family              = var.build_image_family
+  image_name                = var.build_image_name
   network_name              = var.network_name
   private_nodes_enabled     = var.private_nodes_enabled
   base_hugepages_percentage = coalesce((each.value.hugepages_percentage), local.build_base_hugepages_percentage)
@@ -232,6 +233,7 @@ module "client_cluster" {
   // This is here for backwards compatibility
   cluster_name              = each.key == "default" ? "${var.prefix}${var.client_cluster_name}" : "${var.prefix}${var.client_cluster_name}-${each.key}"
   image_family              = var.client_image_family
+  image_name                = var.client_image_name
   network_name              = var.network_name
   private_nodes_enabled     = var.private_nodes_enabled
   base_hugepages_percentage = coalesce((each.value.hugepages_percentage), local.client_base_hugepages_percentage)

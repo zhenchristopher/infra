@@ -494,10 +494,10 @@ variable "orchestration_repository_id" {
   default     = "e2b-orchestration"
 }
 
-variable "orchestrator_image_family" {
+variable "orchestrator_image_name" {
   type        = string
-  description = "Compute image family used by every Nomad node pool."
-  default     = "e2b-orch"
+  description = "Immutable Compute image name used by every Nomad node pool when set."
+  default     = ""
 }
 
 variable "cloudflare_api_token_secret_id" {
@@ -690,8 +690,11 @@ Format: [
 EOT
 
   validation {
-    condition     = alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 10])
-    error_message = "Client capacity manager max size must remain locked at 10."
+    condition = alltrue([
+      for config in values(var.client_clusters_config) :
+      config.capacity_manager_max_size == (var.same_project_canary_enabled ? 1 : 10)
+    ])
+    error_message = "Client capacity manager max size must remain locked at 10, or 1 for the same-project canary."
   }
 }
 
