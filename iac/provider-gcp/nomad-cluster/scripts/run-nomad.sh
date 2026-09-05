@@ -334,15 +334,26 @@ function bootstrap {
   log_info "Nomad server started."
 
   local -r nomad_token="$1"
-  if nomad acl token self -token "$nomad_token" >/dev/null 2>&1; then
-    log_info "Nomad is already bootstrapped"
-    return
+  local -r acl_bootstrap_marker="${NOMAD_ACL_BOOTSTRAP_MARKER:-}"
+  if [[ -n "$acl_bootstrap_marker" && -f "$acl_bootstrap_marker" ]]; then
+    for _ in $(seq 1 30); do
+      if nomad acl token self -token "$nomad_token" >/dev/null 2>&1; then
+        log_info "Nomad restored its bootstrapped ACL authority"
+        return
+      fi
+      sleep 1
+    done
+    log_error "Nomad restored ACL state but the configured management token is invalid"
+    return 1
   fi
 
   log_info "Bootstrapping Nomad"
   echo "$nomad_token" >"/tmp/nomad.token"
   nomad acl bootstrap /tmp/nomad.token
   rm "/tmp/nomad.token"
+  if [[ -n "$acl_bootstrap_marker" ]]; then
+    touch "$acl_bootstrap_marker"
+  fi
 }
 
 function create_node_pools {

@@ -61,6 +61,7 @@ resource "terraform_data" "canary_isolation" {
         var.postgres_connection_string_secret_id == "cny-postgres-connection-string" &&
         var.database_runtime_service_account_email == "cny-db-runtime@ashler-platform.iam.gserviceaccount.com" &&
         var.server_stateful_data_disk_enabled &&
+        var.server_stateful_data_disk_allow_fresh_bootstrap &&
         var.server_stateful_data_disk_type == "pd-balanced" &&
         var.server_stateful_data_disk_size_gb == 10 &&
         alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 1])
@@ -407,9 +408,10 @@ module "cluster" {
   loki_boot_disk_type       = var.loki_boot_disk_type
 
   # Server stateful data disk
-  server_stateful_data_disk_enabled = var.server_stateful_data_disk_enabled
-  server_stateful_data_disk_type    = var.server_stateful_data_disk_type
-  server_stateful_data_disk_size_gb = var.server_stateful_data_disk_size_gb
+  server_stateful_data_disk_enabled               = var.server_stateful_data_disk_enabled
+  server_stateful_data_disk_allow_fresh_bootstrap = var.server_stateful_data_disk_allow_fresh_bootstrap
+  server_stateful_data_disk_type                  = var.server_stateful_data_disk_type
+  server_stateful_data_disk_size_gb               = var.server_stateful_data_disk_size_gb
 
   # ClickHouse stateful data disk
   clickhouse_stateful_disk_type    = var.clickhouse_stateful_disk_type

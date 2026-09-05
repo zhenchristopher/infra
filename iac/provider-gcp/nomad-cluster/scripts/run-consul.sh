@@ -378,15 +378,26 @@ function bootstrap {
 
     if [[ "$consul_leader_addr" == "\"$instance_ip_address:8300\"" ]]; then
       local consul_token="$1"
-      if consul acl token read -self -token="${consul_token}" -format=json >/dev/null 2>&1; then
-        log_info "Consul is already bootstrapped"
-        break
+      local acl_bootstrap_marker="${CONSUL_ACL_BOOTSTRAP_MARKER:-}"
+      if [[ -n "$acl_bootstrap_marker" && -f "$acl_bootstrap_marker" ]]; then
+        for _ in $(seq 1 30); do
+          if consul acl token read -self -token="${consul_token}" -format=json >/dev/null 2>&1; then
+            log_info "Consul restored its bootstrapped ACL authority"
+            return
+          fi
+          sleep 1
+        done
+        log_error "Consul restored ACL state but the configured management token is invalid"
+        return 1
       fi
 
       log_info "Bootstrapping Consul"
       echo "${consul_token}" >/tmp/consul.token
       consul acl bootstrap /tmp/consul.token
       rm /tmp/consul.token
+      if [[ -n "$acl_bootstrap_marker" ]]; then
+        touch "$acl_bootstrap_marker"
+      fi
 
       break
     fi

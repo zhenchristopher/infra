@@ -783,6 +783,12 @@ variable "server_stateful_data_disk_enabled" {
   default     = false
 }
 
+variable "server_stateful_data_disk_allow_fresh_bootstrap" {
+  description = "Authorize a new singleton ACL authority when no prior Nomad or Consul state can be migrated."
+  type        = bool
+  default     = false
+}
+
 variable "server_stateful_data_disk_type" {
   description = "The GCE disk type for persistent Nomad and Consul server state."
   type        = string
@@ -794,8 +800,6 @@ variable "server_stateful_data_disk_size_gb" {
   type        = number
   default     = 10
 }
-
-
 variable "clickhouse_boot_disk_type" {
   description = "The GCE boot disk type for the ClickHouse machines."
   type        = string
