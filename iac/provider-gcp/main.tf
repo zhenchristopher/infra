@@ -61,12 +61,16 @@ resource "terraform_data" "canary_isolation" {
         var.postgres_connection_string_secret_id == "cny-postgres-connection-string" &&
         var.database_runtime_service_account_email == "cny-db-runtime@ashler-platform.iam.gserviceaccount.com" &&
         var.server_stateful_data_disk_enabled &&
-        var.server_stateful_data_disk_allow_fresh_bootstrap &&
         var.server_stateful_data_disk_type == "pd-balanced" &&
         var.server_stateful_data_disk_size_gb == 10 &&
         alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 1])
       )
       error_message = "canary must use private-only nodes with the locked Ashler same-project isolation identity and disable shared project-service ownership."
+    }
+
+    precondition {
+      condition     = !var.server_stateful_data_disk_allow_fresh_bootstrap || var.same_project_canary_enabled
+      error_message = "Fresh singleton ACL bootstrap is restricted to the explicit same-project canary activation."
     }
   }
 }
