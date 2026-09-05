@@ -358,19 +358,37 @@ function bootstrap {
 
 function create_node_pools {
   local -r nomad_token="$1"
+  local node_pool_config_dir
+  local apply_status
+  node_pool_config_dir="$(mktemp -d)" || return 1
+  local -r api_node_pool_config="$node_pool_config_dir/api_node_pool.hcl"
+  local -r build_node_pool_config="$node_pool_config_dir/build_node_pool.hcl"
   log_info "Creating node pools"
-  cat > "$config_dir/api_node_pool.hcl"  <<EOF
+  cat > "$api_node_pool_config" <<EOF
 node_pool "api" {
   description = "Nodes for api."
 }
 EOF
-  nomad node pool apply -token "$nomad_token" "$config_dir/api_node_pool.hcl"
-  cat > "$config_dir/build_node_pool.hcl"  <<EOF
+  if nomad node pool apply -token "$nomad_token" "$api_node_pool_config"; then
+    :
+  else
+    apply_status=$?
+    rm -rf -- "$node_pool_config_dir"
+    return "$apply_status"
+  fi
+  cat > "$build_node_pool_config" <<EOF
 node_pool "build" {
   description = "Nodes for template builds."
 }
 EOF
-  nomad node pool apply -token "$nomad_token" "$config_dir/build_node_pool.hcl"
+  if nomad node pool apply -token "$nomad_token" "$build_node_pool_config"; then
+    :
+  else
+    apply_status=$?
+    rm -rf -- "$node_pool_config_dir"
+    return "$apply_status"
+  fi
+  rm -rf -- "$node_pool_config_dir"
 }
 
 # Based on: http://unix.stackexchange.com/a/7732/215969
