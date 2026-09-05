@@ -58,6 +58,14 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
     }
   }
 
+  dynamic "stateful_internal_ip" {
+    for_each = var.server_stateful_data_disk_enabled ? [1] : []
+    content {
+      interface_name = "nic0"
+      delete_rule    = var.environment == "dev" ? "ON_PERMANENT_INSTANCE_DELETION" : "NEVER"
+    }
+  }
+
   # Server is a stateful cluster. In non-dev environments, use OPPORTUNISTIC updates so instance template
   # changes are only applied when instances are recreated for other reasons (e.g., auto-healing).
   # Proactive rolling replacements of servers can cause missed client heartbeats and secret revocations:
