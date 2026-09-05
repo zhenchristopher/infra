@@ -161,7 +161,7 @@ resource "google_compute_instance_template" "template" {
       goog-ops-agent-policy = "v2-x86-template-1-2-0-${var.gcp_zone}"
     } : {})
   )
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-build"]
   metadata_startup_script = local.startup_script
   metadata = {
     enable-osconfig         = "TRUE",
@@ -210,6 +210,7 @@ resource "google_compute_instance_template" "template" {
 
   network_interface {
     network  = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
     nic_type = var.network_interface_type
 
     dynamic "access_config" {

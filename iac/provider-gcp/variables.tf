@@ -777,6 +777,25 @@ variable "server_boot_disk_size_gb" {
   default     = 20
 }
 
+variable "server_stateful_data_disk_enabled" {
+  description = "Preserve singleton Nomad and Consul server state across managed instance recreation."
+  type        = bool
+  default     = false
+}
+
+variable "server_stateful_data_disk_type" {
+  description = "The GCE disk type for persistent Nomad and Consul server state."
+  type        = string
+  default     = "pd-balanced"
+}
+
+variable "server_stateful_data_disk_size_gb" {
+  description = "The GCE disk size in GB for persistent Nomad and Consul server state."
+  type        = number
+  default     = 10
+}
+
+
 variable "clickhouse_boot_disk_type" {
   description = "The GCE boot disk type for the ClickHouse machines."
   type        = string
@@ -856,9 +875,27 @@ variable "default_persistent_volume_type" {
   default = ""
 }
 
+variable "cluster_tag_name" {
+  type        = string
+  description = "Network tag shared by all orchestration instances for discovery and common controls."
+  default     = "orch"
+}
+
 variable "network_name" {
   type    = string
   default = "default"
+}
+
+variable "subnetwork_name" {
+  type        = string
+  description = "Regional subnet name for compute instances. Empty preserves automatic subnet selection."
+  default     = ""
+}
+
+variable "database_runtime_service_account_email" {
+  type        = string
+  description = "Dedicated identity for API instances that consume the PostgreSQL DSN. Empty preserves the shared runtime identity."
+  default     = ""
 }
 
 variable "volume_token_issuer" {

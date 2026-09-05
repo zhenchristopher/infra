@@ -1,6 +1,7 @@
 locals {
-  server_pool_name = "${var.prefix}${var.server_cluster_name}"
-  server_startup_script = templatefile("${path.module}/scripts/start-server.sh", {
+  server_pool_name           = "${var.prefix}${var.server_cluster_name}"
+  server_startup_script_path = var.server_stateful_data_disk_enabled ? "${path.module}/scripts/start-stateful-server.sh" : "${path.module}/scripts/start-server.sh"
+  server_startup_script = templatefile(local.server_startup_script_path, {
     NUM_SERVERS                  = var.server_cluster_size
     CLUSTER_TAG_NAME             = var.cluster_tag_name
     SCRIPTS_BUCKET               = var.cluster_setup_bucket_name
@@ -49,26 +50,40 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
     port = var.nomad_port
   }
 
+  dynamic "stateful_disk" {
+    for_each = var.server_stateful_data_disk_enabled ? [1] : []
+    content {
+      device_name = "e2b-server-state"
+      delete_rule = var.environment == "dev" ? "ON_PERMANENT_INSTANCE_DELETION" : "NEVER"
+    }
+  }
+
   # Server is a stateful cluster. In non-dev environments, use OPPORTUNISTIC updates so instance template
   # changes are only applied when instances are recreated for other reasons (e.g., auto-healing).
   # Proactive rolling replacements of servers can cause missed client heartbeats and secret revocations:
   # https://github.com/hashicorp/nomad/issues/9390
-  update_policy {
-    type           = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
-    minimal_action = "REPLACE"
+  dynamic "update_policy" {
+    for_each = var.server_stateful_data_disk_enabled ? [1] : []
+    content {
+      type                         = "OPPORTUNISTIC"
+      minimal_action               = "REPLACE"
+      instance_redistribution_type = "NONE"
+      replacement_method           = "RECREATE"
+      max_unavailable_fixed        = 1
+      min_ready_sec                = 120
+    }
+  }
 
-    // Keep PROACTIVE redistribution to maintain even server distribution across zones for Raft quorum resilience.
-    // Note: redistributed instances will pick up the current instance template, which may apply pending template
-    // changes as a side effect of zone rebalancing. This is an acceptable trade-off for server quorum safety.
-    instance_redistribution_type = "PROACTIVE"
-    max_unavailable_fixed        = 0
-
-    // The number has to be a multiple of the number of zones in the region
-    max_surge_fixed = length(data.google_compute_zones.region_zones.names)
-
-    // Wait 120s after instance is "healthy" before considering it truly ready
-    // Gives Consul time to join Raft before GCP proceeds to kill old instances
-    min_ready_sec = 120
+  dynamic "update_policy" {
+    for_each = var.server_stateful_data_disk_enabled ? [] : [1]
+    content {
+      type                         = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
+      minimal_action               = "REPLACE"
+      instance_redistribution_type = "PROACTIVE"
+      max_unavailable_fixed        = 0
+      max_surge_fixed              = length(data.google_compute_zones.region_zones.names)
+      min_ready_sec                = 120
+    }
   }
 
   auto_healing_policies {
@@ -78,6 +93,11 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
 
   lifecycle {
     create_before_destroy = false
+
+    precondition {
+      condition     = !var.server_stateful_data_disk_enabled || var.server_cluster_size == 1
+      error_message = "The stateful server data disk is supported only for a singleton control-plane canary."
+    }
   }
 
   depends_on = [
@@ -96,7 +116,7 @@ resource "google_compute_instance_template" "server" {
   instance_description = null
   machine_type         = var.server_machine_type
 
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-server"]
   metadata_startup_script = local.server_startup_script
   metadata = {
     enable-osconfig         = "TRUE",
@@ -121,8 +141,20 @@ resource "google_compute_instance_template" "server" {
     disk_type    = var.server_boot_disk_type
   }
 
+  dynamic "disk" {
+    for_each = var.server_stateful_data_disk_enabled ? [1] : []
+    content {
+      auto_delete  = true
+      boot         = false
+      device_name  = "e2b-server-state"
+      disk_size_gb = var.server_stateful_data_disk_size_gb
+      disk_type    = var.server_stateful_data_disk_type
+    }
+  }
+
   network_interface {
-    network = var.network_name
+    network    = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
 
     # Create access config dynamically. If a public ip is requested, we just need the empty `access_config` block
     # to automatically assign an external IP address.

@@ -89,6 +89,12 @@ variable "network_name" {
   type        = string
 }
 
+variable "subnetwork_name" {
+  description = "Regional subnet name for compute instances."
+  type        = string
+  default     = ""
+}
+
 variable "private_nodes_enabled" {
   description = "Whether E2B compute nodes use private-only NICs."
   type        = bool

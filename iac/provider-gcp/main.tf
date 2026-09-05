@@ -39,10 +39,13 @@ resource "terraform_data" "canary_isolation" {
       condition = !var.same_project_canary_enabled || (
         var.environment == "dev" &&
         var.private_nodes_enabled &&
+        var.api_use_nat &&
         var.gcp_project_id == "ashler-platform" &&
         var.gcp_region == "us-east1" &&
         var.gcp_zone == "us-east1-b" &&
-        var.network_name == "default" &&
+        var.network_name == "cny-e2b-canary" &&
+        var.subnetwork_name == "cny-e2b-canary-us-east1" &&
+        var.cluster_tag_name == "orch" &&
         var.prefix == "cny-" &&
         var.bucket_prefix == "ashler-platform-e2b-canary-" &&
         var.domain_name == "e2b-canary.ashler.com" &&
@@ -56,6 +59,10 @@ resource "terraform_data" "canary_isolation" {
         length(var.session_security_policy_allowed_source_ranges) == 1 &&
         var.session_security_policy_allowed_source_ranges[0] == "34.139.212.107/32" &&
         var.postgres_connection_string_secret_id == "cny-postgres-connection-string" &&
+        var.database_runtime_service_account_email == "cny-db-runtime@ashler-platform.iam.gserviceaccount.com" &&
+        var.server_stateful_data_disk_enabled &&
+        var.server_stateful_data_disk_type == "pd-balanced" &&
+        var.server_stateful_data_disk_size_gb == 10 &&
         alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 1])
       )
       error_message = "canary must use private-only nodes with the locked Ashler same-project isolation identity and disable shared project-service ownership."
@@ -313,17 +320,20 @@ module "cluster" {
 
   environment = var.environment
 
-  cloudflare_api_token_secret_name = module.init.cloudflare_api_token_secret_name
-  gcp_project_id                   = var.gcp_project_id
-  gcp_region                       = var.gcp_region
-  gcp_zone                         = var.gcp_zone
-  google_service_account_key       = module.init.google_service_account_key
-  enable_gcp_telemetry_metrics     = var.enable_gcp_telemetry_metrics
-  server_image_name                = var.orchestrator_image_name
-  api_image_name                   = var.orchestrator_image_name
-  build_image_name                 = var.orchestrator_image_name
-  client_image_name                = var.orchestrator_image_name
-  network_name                     = var.network_name
+  cloudflare_api_token_secret_name       = module.init.cloudflare_api_token_secret_name
+  gcp_project_id                         = var.gcp_project_id
+  gcp_region                             = var.gcp_region
+  gcp_zone                               = var.gcp_zone
+  google_service_account_key             = module.init.google_service_account_key
+  enable_gcp_telemetry_metrics           = var.enable_gcp_telemetry_metrics
+  server_image_name                      = var.orchestrator_image_name
+  api_image_name                         = var.orchestrator_image_name
+  build_image_name                       = var.orchestrator_image_name
+  client_image_name                      = var.orchestrator_image_name
+  subnetwork_name                        = var.subnetwork_name
+  database_runtime_service_account_email = var.database_runtime_service_account_email
+  cluster_tag_name                       = var.cluster_tag_name
+  network_name                           = var.network_name
 
   build_clusters_config  = var.build_clusters_config
   client_clusters_config = var.client_clusters_config
@@ -395,6 +405,11 @@ module "cluster" {
   server_boot_disk_size_gb  = var.server_boot_disk_size_gb
   clickhouse_boot_disk_type = var.clickhouse_boot_disk_type
   loki_boot_disk_type       = var.loki_boot_disk_type
+
+  # Server stateful data disk
+  server_stateful_data_disk_enabled = var.server_stateful_data_disk_enabled
+  server_stateful_data_disk_type    = var.server_stateful_data_disk_type
+  server_stateful_data_disk_size_gb = var.server_stateful_data_disk_size_gb
 
   # ClickHouse stateful data disk
   clickhouse_stateful_disk_type    = var.clickhouse_stateful_disk_type

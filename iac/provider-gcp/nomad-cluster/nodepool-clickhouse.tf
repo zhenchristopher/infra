@@ -120,7 +120,7 @@ resource "google_compute_instance_template" "clickhouse" {
   labels = merge(
     var.labels,
   )
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-clickhouse"]
   metadata_startup_script = local.clickhouse_start_script
   metadata = {
     enable-osconfig         = "TRUE",
@@ -141,6 +141,7 @@ resource "google_compute_instance_template" "clickhouse" {
 
   network_interface {
     network = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
 
     dynamic "access_config" {
       for_each = var.private_nodes_enabled ? [] : ["public_ip"]

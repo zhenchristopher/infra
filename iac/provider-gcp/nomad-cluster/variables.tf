@@ -234,6 +234,18 @@ variable "network_name" {
   type = string
 }
 
+variable "subnetwork_name" {
+  type        = string
+  description = "Regional subnet name for compute instances. Empty preserves automatic subnet selection."
+  default     = ""
+}
+
+variable "database_runtime_service_account_email" {
+  type        = string
+  description = "Dedicated API instance identity permitted to consume the PostgreSQL DSN."
+  default     = ""
+}
+
 variable "google_service_account_email" {
   type = string
 }
@@ -407,6 +419,21 @@ variable "server_boot_disk_type" {
 
 variable "server_boot_disk_size_gb" {
   description = "The GCE boot disk size in GB for the control server machines."
+  type        = number
+}
+
+variable "server_stateful_data_disk_enabled" {
+  description = "Preserve singleton Nomad and Consul server state across managed instance recreation."
+  type        = bool
+}
+
+variable "server_stateful_data_disk_type" {
+  description = "The GCE disk type for persistent Nomad and Consul server state."
+  type        = string
+}
+
+variable "server_stateful_data_disk_size_gb" {
+  description = "The GCE disk size in GB for persistent Nomad and Consul server state."
   type        = number
 }
 

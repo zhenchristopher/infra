@@ -378,6 +378,11 @@ function bootstrap {
 
     if [[ "$consul_leader_addr" == "\"$instance_ip_address:8300\"" ]]; then
       local consul_token="$1"
+      if consul acl token read -self -token="${consul_token}" -format=json >/dev/null 2>&1; then
+        log_info "Consul is already bootstrapped"
+        break
+      fi
+
       log_info "Bootstrapping Consul"
       echo "${consul_token}" >/tmp/consul.token
       consul acl bootstrap /tmp/consul.token

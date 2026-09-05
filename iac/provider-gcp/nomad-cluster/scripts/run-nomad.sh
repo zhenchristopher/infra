@@ -334,6 +334,11 @@ function bootstrap {
   log_info "Nomad server started."
 
   local -r nomad_token="$1"
+  if nomad acl token self -token "$nomad_token" >/dev/null 2>&1; then
+    log_info "Nomad is already bootstrapped"
+    return
+  fi
+
   log_info "Bootstrapping Nomad"
   echo "$nomad_token" >"/tmp/nomad.token"
   nomad acl bootstrap /tmp/nomad.token

@@ -89,7 +89,7 @@ resource "google_compute_instance_template" "loki" {
       goog-ops-agent-policy = "v2-x86-template-1-2-0-${var.gcp_zone}"
     } : {})
   )
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-loki"]
   metadata_startup_script = local.loki_startup_script
   metadata = merge(
     { loki_cluster = "TRUE" },
@@ -112,6 +112,7 @@ resource "google_compute_instance_template" "loki" {
 
   network_interface {
     network = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
 
     dynamic "access_config" {
       for_each = var.private_nodes_enabled ? [] : ["public_ip"]

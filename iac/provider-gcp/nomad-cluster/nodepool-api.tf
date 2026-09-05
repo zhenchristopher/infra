@@ -113,7 +113,7 @@ resource "google_compute_instance_template" "api" {
       goog-ops-agent-policy = "v2-x86-template-1-2-0-${var.gcp_zone}"
     } : {})
   )
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-api"]
   metadata_startup_script = local.api_startup_script
   metadata = merge(
     { api_cluster = "TRUE" },
@@ -136,6 +136,7 @@ resource "google_compute_instance_template" "api" {
 
   network_interface {
     network = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
 
     dynamic "access_config" {
       for_each = var.private_nodes_enabled || var.api_use_nat ? [] : ["public_ip"]
@@ -145,7 +146,7 @@ resource "google_compute_instance_template" "api" {
 
   # For a full list of oAuth 2.0 Scopes, see https://developers.google.com/identity/protocols/googlescopes
   service_account {
-    email = var.google_service_account_email
+    email = var.database_runtime_service_account_email != "" ? var.database_runtime_service_account_email : var.google_service_account_email
     scopes = [
       "userinfo-email",
       "compute-ro",

@@ -162,6 +162,7 @@ module "build_cluster" {
   gcp_zone                     = var.gcp_zone
   google_service_account_email = var.google_service_account_email
   google_service_account_key   = var.google_service_account_key
+  subnetwork_name                = var.subnetwork_name
 
   cluster_size     = each.value.cluster_size
   cache_disks      = each.value.cache_disks
@@ -222,6 +223,7 @@ module "client_cluster" {
   gcp_zone                     = var.gcp_zone
   google_service_account_email = var.google_service_account_email
   google_service_account_key   = var.google_service_account_key
+  subnetwork_name                = var.subnetwork_name
 
   cluster_size              = each.value.cluster_size
   capacity_manager_max_size = each.value.capacity_manager_max_size
