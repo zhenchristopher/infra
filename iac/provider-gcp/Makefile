@@ -7,6 +7,8 @@ TF := $(shell which terraform)
 TF_VAR_FILE := ./.terraform.${ENV}.tfvars
 TF_VAR_FILE_ARG := $(if $(wildcard $(TF_VAR_FILE)),-var-file=$(TF_VAR_FILE))
 TERRAFORM_STATE_BUCKET ?= $(GCP_PROJECT_ID)-terraform-state
+TERRAFORM_STATE_PREFIX ?= terraform/orchestration/state
+PACKER_TERRAFORM_STATE_PREFIX ?= terraform/cluster-disk-image/state
 TEMPLATE_BUCKET_LOCATION ?= $(GCP_REGION)
 BUCKET_PREFIX ?= $(GCP_PROJECT_ID)-
 
@@ -29,6 +31,7 @@ tf_vars := \
 	$(call tfvar, API_CLUSTER_SIZE) \
 	$(call tfvar, API_USE_NAT) \
 	$(call tfvar, API_NAT_IPS) \
+	$(call tfvar, PRIVATE_NODES_ENABLED) \
 	$(call tfvar, SERVER_MACHINE_TYPE) \
 	$(call tfvar, SERVER_CLUSTER_SIZE) \
 	$(call tfvar, CLICKHOUSE_CLUSTER_SIZE) \
@@ -118,10 +121,10 @@ init:
 	# Remove the temporary lifecycle file
 	@ rm -f $(LIFECYCLE_FILE)
 
-	@ $(TF) init -input=false -reconfigure -backend-config=bucket=$(TERRAFORM_STATE_BUCKET)
+	@ $(TF) init -input=false -reconfigure -backend-config=bucket=$(TERRAFORM_STATE_BUCKET) -backend-config=prefix=$(TERRAFORM_STATE_PREFIX)
 	@ $(tf_vars) $(TF) apply -target=module.init -auto-approve -input=false -compact-warnings
 
-	@ TERRAFORM_STATE_BUCKET="$(TERRAFORM_STATE_BUCKET)" $(MAKE) -C nomad-cluster-disk-image init build
+	@ TERRAFORM_STATE_BUCKET="$(TERRAFORM_STATE_BUCKET)" PACKER_TERRAFORM_STATE_PREFIX="$(PACKER_TERRAFORM_STATE_PREFIX)" $(MAKE) -C nomad-cluster-disk-image init build
 	@ gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
 .PHONY: state-migrate
@@ -143,7 +146,7 @@ apply-init:
 .PHONY: switch
 switch:
 	@ printf "Switching Terraform backend for different env ${ENV}\n"
-	@ $(TF) init -input=false -upgrade -reconfigure -backend-config=bucket=$(TERRAFORM_STATE_BUCKET)
+	@ $(TF) init -input=false -upgrade -reconfigure -backend-config=bucket=$(TERRAFORM_STATE_BUCKET) -backend-config=prefix=$(TERRAFORM_STATE_PREFIX)
 
 .PHONY: destroy
 destroy:

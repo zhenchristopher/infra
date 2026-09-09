@@ -209,7 +209,7 @@ func TestPlaceSandbox_ResourceExhausted(t *testing.T) {
 	assert.Equal(t, node2, resultNode.Node, "should succeed on node2 after node1 was exhausted")
 	algorithm.AssertExpectations(t)
 
-	// Verify node1 was NOT excluded (ResourceExhausted nodes should be retried)
+	// Verify the request retried on another node after node1 was exhausted.
 	algorithm.AssertNumberOfCalls(t, "chooseNode", 2)
 }
 

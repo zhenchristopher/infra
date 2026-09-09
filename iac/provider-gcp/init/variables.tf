@@ -2,6 +2,30 @@ variable "prefix" {
   type = string
 }
 
+variable "manage_project_services" {
+  type        = bool
+  description = "Whether this stack owns shared project API enablement. Disable for a same-project canary."
+  default     = true
+}
+
+variable "orchestration_repository_id" {
+  type        = string
+  description = "Artifact Registry repository retained for legacy orchestration images."
+  default     = "e2b-orchestration"
+}
+
+variable "cloudflare_api_token_secret_id" {
+  type        = string
+  description = "Existing Cloudflare API token secret to reuse instead of creating a prefixed placeholder."
+  default     = ""
+}
+
+variable "postgres_connection_string_secret_id" {
+  type        = string
+  description = "Existing PostgreSQL DSN secret to reuse instead of creating a prefixed placeholder."
+  default     = ""
+}
+
 variable "bucket_prefix" {
   type = string
 }

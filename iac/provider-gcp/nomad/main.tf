@@ -208,6 +208,29 @@ data "google_secret_manager_secret_version" "grafana_username" {
   depends_on = [google_secret_manager_secret_version.grafana_username]
 }
 
+resource "google_secret_manager_secret" "scaffold_clickstack_otlp_token" {
+  secret_id = "${var.prefix}scaffold-clickstack-otlp-token"
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "scaffold_clickstack_otlp_token" {
+  secret      = google_secret_manager_secret.scaffold_clickstack_otlp_token.name
+  secret_data = " "
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+data "google_secret_manager_secret_version" "scaffold_clickstack_otlp_token" {
+  secret = google_secret_manager_secret.scaffold_clickstack_otlp_token.name
+
+  depends_on = [google_secret_manager_secret_version.scaffold_clickstack_otlp_token]
+}
+
 module "otel_collector" {
   source = "../../modules/job-otel-collector"
 
@@ -229,6 +252,9 @@ module "otel_collector" {
   enable_gcp_telemetry_metrics          = var.enable_gcp_telemetry_metrics
   enable_gcp_telemetry_external_metrics = var.enable_gcp_telemetry_external_metrics
   gcp_telemetry_project_id              = var.gcp_project_id
+
+  scaffold_clickstack_otlp_endpoint = var.scaffold_clickstack_otlp_endpoint
+  scaffold_clickstack_otlp_token    = data.google_secret_manager_secret_version.scaffold_clickstack_otlp_token.secret_data
 
   clickhouse_username = var.clickhouse_username
   clickhouse_password = var.clickhouse_password
@@ -340,13 +366,19 @@ module "logs_collector" {
 
 data "google_storage_bucket_object" "orchestrator" {
   count  = var.orchestrator_enabled ? 1 : 0
-  name   = "orchestrator"
+  name   = var.canary_release == null ? "orchestrator" : "releases/${var.canary_release.source.buildCommit}/orchestrator"
   bucket = var.fc_env_pipeline_bucket_name
+  lifecycle {
+    postcondition {
+      condition     = var.canary_release == null ? true : tostring(self.generation) == var.canary_release.binaries.orchestrator.generation
+      error_message = "Canary orchestrator generation differs from the reviewed release."
+    }
+  }
 }
 
 locals {
   orchestrator_checksum        = var.orchestrator_enabled ? data.google_storage_bucket_object.orchestrator[0].generation : ""
-  orchestrator_artifact_source = var.orchestrator_enabled ? "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/orchestrator?version=${local.orchestrator_checksum}" : ""
+  orchestrator_artifact_source = var.orchestrator_enabled ? "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/${data.google_storage_bucket_object.orchestrator[0].name}?version=${local.orchestrator_checksum}" : ""
 }
 
 module "orchestrator" {
@@ -365,12 +397,18 @@ module "orchestrator" {
 }
 
 data "google_storage_bucket_object" "template_manager" {
-  name   = "template-manager"
+  name   = var.canary_release == null ? "template-manager" : "releases/${var.canary_release.source.buildCommit}/template-manager"
   bucket = var.fc_env_pipeline_bucket_name
+  lifecycle {
+    postcondition {
+      condition     = var.canary_release == null ? true : tostring(self.generation) == var.canary_release.binaries["template-manager"].generation
+      error_message = "Canary template manager generation differs from the reviewed release."
+    }
+  }
 }
 
 locals {
-  template_manager_artifact_source = "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/template-manager?version=${data.google_storage_bucket_object.template_manager.generation}"
+  template_manager_artifact_source = "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/${data.google_storage_bucket_object.template_manager.name}?version=${data.google_storage_bucket_object.template_manager.generation}"
 }
 
 module "template_manager" {
@@ -381,8 +419,9 @@ module "template_manager" {
 
   port = var.template_manager_port
 
-  artifact_source = local.template_manager_artifact_source
-  job_env_vars    = var.template_manager_env_vars
+  artifact_source      = local.template_manager_artifact_source
+  envd_artifact_source = var.canary_release == null ? "" : "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/${data.google_storage_bucket_object.canary_envd[0].name}?version=${data.google_storage_bucket_object.canary_envd[0].generation}&checksum=sha256:${var.canary_release.binaries.envd.sha256}"
+  job_env_vars         = var.template_manager_env_vars
 
   nomad_addr  = "https://nomad.${var.domain_name}"
   nomad_token = var.nomad_acl_token_secret
@@ -453,7 +492,7 @@ resource "google_secret_manager_secret_version" "clickhouse_server_secret_value"
 }
 
 resource "google_service_account" "clickhouse_service_account" {
-  account_id   = "${var.prefix}clickhouse-service-account"
+  account_id   = var.clickhouse_service_account_id == "" ? "${var.prefix}clickhouse-service-account" : var.clickhouse_service_account_id
   display_name = "${var.prefix}clickhouse-service-account"
 }
 
@@ -502,12 +541,18 @@ module "clickhouse" {
 }
 
 data "google_storage_bucket_object" "filestore_cleanup" {
-  name   = "clean-nfs-cache"
+  name   = var.canary_release == null ? "clean-nfs-cache" : "releases/${var.canary_release.source.buildCommit}/clean-nfs-cache"
   bucket = var.fc_env_pipeline_bucket_name
+  lifecycle {
+    postcondition {
+      condition     = var.canary_release == null ? true : tostring(self.generation) == var.canary_release.binaries["clean-nfs-cache"].generation
+      error_message = "Canary cache cleanup generation differs from the reviewed release."
+    }
+  }
 }
 
 locals {
-  clean_nfs_cache_artifact_source = "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/clean-nfs-cache?version=${data.google_storage_bucket_object.filestore_cleanup.generation}"
+  clean_nfs_cache_artifact_source = "gcs::https://www.googleapis.com/storage/v1/${var.fc_env_pipeline_bucket_name}/${data.google_storage_bucket_object.filestore_cleanup.name}?version=${data.google_storage_bucket_object.filestore_cleanup.generation}"
 }
 
 resource "nomad_job" "clean_nfs_cache" {

@@ -75,6 +75,7 @@ type Server struct {
 	featureFlags             *featureflags.Client
 	sbxEventsService         *events.EventsService
 	startingSandboxes        *utils.AdjustableSemaphore
+	admission                *service.AdmissionController
 	peerRegistry             peerclient.Registry
 	uploadedBuilds           *ttlcache.Cache[string, struct{}]
 	uploads                  *sandbox.Uploads
@@ -116,6 +117,7 @@ type ServiceConfig struct {
 	SbxEventsService *events.EventsService
 	PeerRegistry     peerclient.Registry
 	Uploads          *sandbox.Uploads
+	Admission        *service.AdmissionController
 }
 
 func New(ctx context.Context, cfg ServiceConfig) (*Server, error) {
@@ -142,6 +144,7 @@ func New(ctx context.Context, cfg ServiceConfig) (*Server, error) {
 		featureFlags:      cfg.FeatureFlags,
 		sbxEventsService:  cfg.SbxEventsService,
 		startingSandboxes: startingSandboxes,
+		admission:         cfg.Admission,
 		peerRegistry:      cfg.PeerRegistry,
 		uploadedBuilds:    uploadedBuilds,
 		uploads:           cfg.Uploads,

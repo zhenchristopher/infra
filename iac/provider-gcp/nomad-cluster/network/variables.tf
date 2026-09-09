@@ -35,6 +35,12 @@ variable "api_use_nat" {
   type = bool
 }
 
+variable "private_nodes_enabled" {
+  description = "Whether E2B compute nodes use private-only NICs and IAP-only operator access."
+  type        = bool
+  default     = false
+}
+
 variable "api_nat_ips" {
   type = list(string)
 }
@@ -63,6 +69,11 @@ variable "ingress_port" {
   })
 }
 
+variable "docker_reverse_proxy_enabled" {
+  type    = bool
+  default = true
+}
+
 variable "docker_reverse_proxy_port" {
   type = object({
     name        = string
@@ -84,6 +95,18 @@ variable "client_proxy_port" {
     name = string
     port = number
   })
+}
+
+variable "session_security_policy_rules_managed_externally" {
+  description = "Whether the session Cloud Armor request throttle rules are managed outside the E2B Terraform stack."
+  type        = bool
+  default     = false
+}
+
+variable "session_security_policy_allowed_source_ranges" {
+  description = "Source CIDRs allowed to reach direct sandbox session hosts when this stack owns the policy rules."
+  type        = list(string)
+  default     = ["*"]
 }
 
 variable "nomad_port" {

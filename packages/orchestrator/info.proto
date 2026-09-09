@@ -76,13 +76,39 @@ message ServiceInfoResponse {
   uint64 metric_hugepages_used = 115;
   uint64 metric_hugepages_reserved = 116;
   uint64 metric_hugepage_size_bytes = 117;
+  uint32 metric_sandboxes_starting = 118;
 }
 
 message ServiceStatusChangeRequest {
   ServiceInfoStatus service_status = 2;
 }
 
+message HostDrainRequest {
+  string request_id = 1;
+}
+
+message HostReadyRequest {
+  uint64 expected_drain_generation = 1;
+}
+
+message HostAdmissionSnapshot {
+  string node_id = 1;
+  string service_id = 2;
+  ServiceInfoStatus service_status = 3;
+  string drain_request_id = 4;
+  uint64 drain_generation = 5;
+  bool admission_closed = 6;
+  uint32 metric_sandboxes_running = 7;
+  uint32 metric_sandboxes_starting = 8;
+  bool recovery_complete = 9;
+  uint64 recovery_epoch = 10;
+  bool quiescent = 11;
+}
+
 service InfoService {
   rpc ServiceInfo(google.protobuf.Empty) returns (ServiceInfoResponse);
   rpc ServiceStatusOverride(ServiceStatusChangeRequest) returns (google.protobuf.Empty);
+  rpc HostAdmission(google.protobuf.Empty) returns (HostAdmissionSnapshot);
+  rpc HostDrain(HostDrainRequest) returns (HostAdmissionSnapshot);
+  rpc HostReady(HostReadyRequest) returns (HostAdmissionSnapshot);
 }

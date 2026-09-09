@@ -107,8 +107,16 @@ job "template-manager" {
 
       config {
         command = "/bin/bash"
-        args    = ["-c", " chmod +x local/template-manager && local/template-manager"]
+        args    = ["-c", "chmod +x local/template-manager%{ if envd_artifact_source != "" } local/envd%{ endif } && local/template-manager"]
       }
+
+%{ if envd_artifact_source != "" }
+      artifact {
+        source      = "${envd_artifact_source}"
+        destination = "local/envd"
+        mode        = "file"
+      }
+%{ endif }
 
       artifact {
         source      = "${artifact_source}"

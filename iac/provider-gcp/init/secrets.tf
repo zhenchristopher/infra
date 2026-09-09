@@ -1,5 +1,6 @@
 
 resource "google_secret_manager_secret" "cloudflare_api_token" {
+  count     = var.cloudflare_api_token_secret_id == "" ? 1 : 0
   secret_id = "${var.prefix}cloudflare-api-token"
 
   replication {
@@ -191,6 +192,7 @@ resource "google_secret_manager_secret_version" "routing_domains" {
 }
 
 resource "google_secret_manager_secret" "postgres_connection_string" {
+  count     = var.postgres_connection_string_secret_id == "" ? 1 : 0
   secret_id = "${var.prefix}postgres-connection-string"
 
   replication {

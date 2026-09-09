@@ -33,6 +33,48 @@ terraform {
   }
 }
 
+resource "terraform_data" "canary_isolation" {
+  lifecycle {
+    precondition {
+      condition = !var.same_project_canary_enabled || (
+        var.environment == "dev" &&
+        var.private_nodes_enabled &&
+        var.api_use_nat &&
+        var.gcp_project_id == "ashler-platform" &&
+        var.gcp_region == "us-east1" &&
+        var.gcp_zone == "us-east1-b" &&
+        var.network_name == "cny-e2b-canary" &&
+        var.subnetwork_name == "cny-e2b-canary-us-east1" &&
+        var.cluster_tag_name == "orch" &&
+        var.prefix == "cny-" &&
+        var.bucket_prefix == "ashler-platform-e2b-canary-" &&
+        var.domain_name == "e2b-canary.ashler.com" &&
+        can(regex("^cny-orch-[0-9]{4}(-[0-9]{2}){5}$", var.orchestrator_image_name)) &&
+        var.docker_registry_service_account_id == "cny-docker-reverse-proxy-sa" &&
+        var.clickhouse_service_account_id == "cny-clickhouse-service-account" &&
+        !var.manage_project_services &&
+        var.orchestration_repository_id == "cny-e2b-orchestration" &&
+        var.cloudflare_api_token_secret_id == "ashler-e2b-dev-cloudflare-api-token" &&
+        !var.session_security_policy_rules_managed_externally &&
+        length(var.session_security_policy_allowed_source_ranges) == 1 &&
+        var.session_security_policy_allowed_source_ranges[0] == "34.139.212.107/32" &&
+        var.postgres_connection_string_secret_id == "cny-postgres-connection-string" &&
+        var.database_runtime_service_account_email == "cny-db-runtime@ashler-platform.iam.gserviceaccount.com" &&
+        var.server_stateful_data_disk_enabled &&
+        var.server_stateful_data_disk_type == "pd-balanced" &&
+        var.server_stateful_data_disk_size_gb == 10 &&
+        alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 3])
+      )
+      error_message = "canary must use private-only nodes with the locked Ashler same-project isolation identity and disable shared project-service ownership."
+    }
+
+    precondition {
+      condition     = !var.server_stateful_data_disk_allow_fresh_bootstrap || var.same_project_canary_enabled
+      error_message = "Fresh singleton ACL bootstrap is restricted to the explicit same-project canary activation."
+    }
+  }
+}
+
 provider "google" {
   project = var.gcp_project_id
   region  = var.gcp_region
@@ -188,7 +230,9 @@ locals {
     DOCKERHUB_REMOTE_REPOSITORY_URL = var.remote_repository_enabled ? module.remote_repository[0].dockerhub_remote_repository_url : ""
     GIN_MODE                        = "release"
     LAUNCH_DARKLY_API_KEY           = trimspace(data.google_secret_manager_secret_version.launch_darkly_api_key.secret_data)
-  }, var.template_manager_env_vars)
+    }, var.template_manager_env_vars, var.canary_release == null ? {} : {
+    HOST_ENVD_PATH = "local/envd"
+  })
 
   docker_reverse_proxy_env_vars = merge({
     POSTGRES_CONNECTION_STRING    = data.google_secret_manager_secret_version.postgres_connection_string.secret_data
@@ -255,9 +299,13 @@ locals {
 module "init" {
   source = "./init"
 
-  labels        = var.labels
-  prefix        = var.prefix
-  bucket_prefix = var.bucket_prefix
+  labels                               = var.labels
+  prefix                               = var.prefix
+  bucket_prefix                        = var.bucket_prefix
+  manage_project_services              = var.manage_project_services
+  orchestration_repository_id          = var.orchestration_repository_id
+  cloudflare_api_token_secret_id       = var.cloudflare_api_token_secret_id
+  postgres_connection_string_secret_id = var.postgres_connection_string_secret_id
 
   gcp_project_id = var.gcp_project_id
   gcp_region     = var.gcp_region
@@ -270,6 +318,8 @@ module "init" {
     admission_policy = var.anywhere_cache_admission_policy
     ttl              = var.anywhere_cache_ttl
   }
+
+  depends_on = [terraform_data.canary_isolation]
 }
 
 module "cluster" {
@@ -277,12 +327,20 @@ module "cluster" {
 
   environment = var.environment
 
-  cloudflare_api_token_secret_name = module.init.cloudflare_api_token_secret_name
-  gcp_project_id                   = var.gcp_project_id
-  gcp_region                       = var.gcp_region
-  gcp_zone                         = var.gcp_zone
-  google_service_account_key       = module.init.google_service_account_key
-  network_name                     = var.network_name
+  cloudflare_api_token_secret_name       = module.init.cloudflare_api_token_secret_name
+  gcp_project_id                         = var.gcp_project_id
+  gcp_region                             = var.gcp_region
+  gcp_zone                               = var.gcp_zone
+  google_service_account_key             = module.init.google_service_account_key
+  enable_gcp_telemetry_metrics           = var.enable_gcp_telemetry_metrics
+  server_image_name                      = var.canary_release == null ? var.orchestrator_image_name : data.google_compute_image.canary_release[0].image_id
+  api_image_name                         = var.canary_release == null ? var.orchestrator_image_name : data.google_compute_image.canary_release[0].image_id
+  build_image_name                       = var.canary_release == null ? var.orchestrator_image_name : data.google_compute_image.canary_release[0].image_id
+  client_image_name                      = var.canary_release == null ? var.orchestrator_image_name : data.google_compute_image.canary_release[0].image_id
+  subnetwork_name                        = var.subnetwork_name
+  database_runtime_service_account_email = var.database_runtime_service_account_email
+  cluster_tag_name                       = var.cluster_tag_name
+  network_name                           = var.network_name
 
   build_clusters_config  = var.build_clusters_config
   client_clusters_config = var.client_clusters_config
@@ -306,12 +364,17 @@ module "cluster" {
   api_use_nat              = var.api_use_nat
   api_nat_ips              = var.api_nat_ips
   api_nat_min_ports_per_vm = var.api_nat_min_ports_per_vm
+  private_nodes_enabled    = var.private_nodes_enabled
 
-  client_proxy_port        = var.client_proxy_port
-  client_proxy_health_port = var.client_proxy_health_port
+  client_proxy_port                                = var.client_proxy_port
+  client_proxy_health_port                         = var.client_proxy_health_port
+  session_security_policy_rules_managed_externally = var.session_security_policy_rules_managed_externally
+  session_security_policy_allowed_source_ranges    = var.session_security_policy_allowed_source_ranges
+
 
   ingress_port                 = var.ingress_port
   api_port                     = var.api_port
+  docker_reverse_proxy_enabled = var.docker_reverse_proxy_enabled
   docker_reverse_proxy_port    = var.docker_reverse_proxy_port
   nomad_port                   = var.nomad_port
   google_service_account_email = module.init.service_account_email
@@ -349,6 +412,12 @@ module "cluster" {
   server_boot_disk_size_gb  = var.server_boot_disk_size_gb
   clickhouse_boot_disk_type = var.clickhouse_boot_disk_type
   loki_boot_disk_type       = var.loki_boot_disk_type
+
+  # Server stateful data disk
+  server_stateful_data_disk_enabled               = var.server_stateful_data_disk_enabled
+  server_stateful_data_disk_allow_fresh_bootstrap = var.server_stateful_data_disk_allow_fresh_bootstrap
+  server_stateful_data_disk_type                  = var.server_stateful_data_disk_type
+  server_stateful_data_disk_size_gb               = var.server_stateful_data_disk_size_gb
 
   # ClickHouse stateful data disk
   clickhouse_stateful_disk_type    = var.clickhouse_stateful_disk_type
@@ -393,15 +462,17 @@ module "k8s_apps" {
 module "nomad" {
   source = "./nomad"
 
-  prefix         = var.prefix
-  gcp_project_id = var.gcp_project_id
-  gcp_region     = var.gcp_region
-  gcp_zone       = var.gcp_zone
+  prefix                        = var.prefix
+  gcp_project_id                = var.gcp_project_id
+  clickhouse_service_account_id = var.clickhouse_service_account_id
+  gcp_region                    = var.gcp_region
+  gcp_zone                      = var.gcp_zone
 
   consul_acl_token_secret = module.init.consul_acl_token_secret
   nomad_acl_token_secret  = module.init.nomad_acl_token_secret
   nomad_port              = var.nomad_port
   core_repository_name    = module.init.core_repository_name
+  canary_release          = var.canary_release
 
   # Clickhouse
   clickhouse_resources_cpu_count   = var.clickhouse_resources_cpu_count
@@ -471,6 +542,7 @@ module "nomad" {
   otel_router_grpc_port                 = var.otel_router_grpc_port
   enable_gcp_telemetry_metrics          = var.enable_gcp_telemetry_metrics
   enable_gcp_telemetry_external_metrics = var.enable_gcp_telemetry_external_metrics
+  scaffold_clickstack_otlp_endpoint     = var.scaffold_clickstack_otlp_endpoint
 
   # Dashboard API
   dashboard_api_count    = var.dashboard_api_count

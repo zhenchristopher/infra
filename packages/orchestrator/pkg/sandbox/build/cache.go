@@ -56,10 +56,11 @@ type DiffStore struct {
 	insertionTimes sync.Map // map[DiffStoreKey]time.Time — tracks when each diff was cached
 
 	// pinned entries are skipped by disk-pressure eviction (TTL eviction still
-	// applies). Used to protect a diff whose Close would tear down state another
-	// live entry depends on — e.g. the memfile diff whose DedupedMemfdCache is
-	// also serving an in-flight provisional resume.
-	pinned sync.Map // map[DiffStoreKey]struct{}
+	// applies). Counts allow independent provisional-resume and remote-upload
+	// lifetimes to protect the same diff without one owner's Unpin releasing the
+	// other owner's protection.
+	pinMu  sync.RWMutex
+	pinned map[DiffStoreKey]uint32
 }
 
 func NewDiffStore(
@@ -85,6 +86,7 @@ func NewDiffStore(
 		flags:     flags,
 		pdSizes:   make(map[DiffStoreKey]*deleteDiff),
 		pdDelay:   delay,
+		pinned:    make(map[DiffStoreKey]uint32),
 	}
 
 	cache.OnEviction(func(ctx context.Context, _ ttlcache.EvictionReason, item *ttlcache.Item[DiffStoreKey, Diff]) {
@@ -334,7 +336,6 @@ func (s *DiffStore) deleteOldestFromCache(ctx context.Context) (suc bool, e erro
 		if dd, ok := item.Value().(*deferredDiff); ok && !dd.sealed() {
 			return true
 		}
-
 		sfSize, err := item.Value().FileSize(ctx)
 		if err != nil {
 			logger.L().Warn(ctx, "failed to get size of deleted item from cache", zap.Error(err))
@@ -376,21 +377,42 @@ func (s *DiffStore) isBeingDeleted(key DiffStoreKey) bool {
 }
 
 // Pin protects a cached entry from disk-pressure eviction (TTL eviction still
-// applies). Idempotent; pair every Pin with an Unpin.
-func (s *DiffStore) Pin(key DiffStoreKey) { s.pinned.Store(key, struct{}{}) }
+// applies). Each call must be paired with Unpin.
+func (s *DiffStore) Pin(key DiffStoreKey) {
+	s.pinMu.Lock()
+	s.pinned[key]++
+	s.pinMu.Unlock()
+}
 
-// Unpin lifts a Pin, making the entry eligible for disk-pressure eviction again.
-func (s *DiffStore) Unpin(key DiffStoreKey) { s.pinned.Delete(key) }
+// Unpin releases one pin. The entry remains protected until every owner has
+// released its matching pin.
+func (s *DiffStore) Unpin(key DiffStoreKey) {
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+
+	switch s.pinned[key] {
+	case 0:
+		return
+	case 1:
+		delete(s.pinned, key)
+	default:
+		s.pinned[key]--
+	}
+}
 
 func (s *DiffStore) isPinned(key DiffStoreKey) bool {
-	_, ok := s.pinned.Load(key)
+	s.pinMu.RLock()
+	defer s.pinMu.RUnlock()
 
-	return ok
+	return s.pinned[key] > 0
 }
 
 func (s *DiffStore) scheduleDelete(ctx context.Context, key DiffStoreKey, dSize int64) {
 	s.pdMu.Lock()
 	defer s.pdMu.Unlock()
+	if s.isPinned(key) {
+		return
+	}
 
 	cancelCh := make(chan struct{})
 	s.pdSizes[key] = &deleteDiff{

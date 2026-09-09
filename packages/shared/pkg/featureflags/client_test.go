@@ -80,3 +80,37 @@ func TestAllContextsIncludesRegisteredProviders(t *testing.T) {
 
 	require.Equal(t, "node-1", seen["node"])
 }
+
+func TestSafetyBoolEnvironmentOverrides(t *testing.T) {
+	client := &Client{}
+
+	t.Setenv(hybridPlacementOverrideEnv, "true")
+	require.True(t, client.BoolFlag(t.Context(), HybridPlacementFlag))
+
+	t.Setenv(hybridPlacementOverrideEnv, "invalid")
+	require.False(t, client.BoolFlag(t.Context(), HybridPlacementFlag))
+
+	t.Setenv(hostAdmissionOverrideEnv, "false")
+	require.False(t, client.BoolFlag(t.Context(), HostAdmissionFlag))
+}
+
+func TestSafetyIntEnvironmentOverrides(t *testing.T) {
+	client := &Client{}
+
+	t.Setenv(sandboxLimitOverrideEnv, "3")
+	require.Equal(t, 3, client.IntFlag(t.Context(), HybridPlacementThreshold))
+	require.Equal(t, 3, client.IntFlag(t.Context(), HybridPlacementCeiling))
+	require.Equal(t, 3, client.IntFlag(t.Context(), MaxSandboxesPerNode))
+
+	t.Setenv(sandboxLimitOverrideEnv, "invalid")
+	require.Zero(t, client.IntFlag(t.Context(), HybridPlacementThreshold))
+
+	t.Setenv(sandboxLimitOverrideEnv, "0")
+	require.Zero(t, client.IntFlag(t.Context(), HybridPlacementCeiling))
+
+	t.Setenv(buildCacheUsageOverrideEnv, "70")
+	require.Equal(t, 70, client.IntFlag(t.Context(), BuildCacheMaxUsagePercentage))
+
+	t.Setenv(buildCacheUsageOverrideEnv, "invalid")
+	require.Zero(t, client.IntFlag(t.Context(), BuildCacheMaxUsagePercentage))
+}

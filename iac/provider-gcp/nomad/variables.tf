@@ -2,6 +2,10 @@ variable "prefix" {
   type = string
 }
 
+variable "clickhouse_service_account_id" {
+  type = string
+}
+
 variable "gcp_zone" {
   type = string
 }
@@ -65,6 +69,7 @@ variable "api_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
+
 }
 
 variable "api_db_migrator_env_vars" {
@@ -383,6 +388,12 @@ variable "enable_gcp_telemetry_external_metrics" {
   description = "Enable exporting external e2b.* metrics to Google Cloud Monitoring. Requires enable_gcp_telemetry_metrics."
 }
 
+variable "scaffold_clickstack_otlp_endpoint" {
+  type        = string
+  default     = ""
+  description = "Authenticated OTLP/HTTP endpoint used for direct Scaffold OOM telemetry export."
+}
+
 variable "clickhouse_server_port" {
   type = object({
     name = string
@@ -485,11 +496,13 @@ variable "gcs_grpc_connection_pool_size" {
   type        = number
 }
 
+
 variable "orchestrator_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
 }
+
 
 variable "orchestrator_enabled" {
   type        = bool

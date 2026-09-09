@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"sync"
 
 	"github.com/e2b-dev/infra/packages/api/internal/orchestrator/nodemanager"
@@ -18,14 +19,22 @@ type BestOfKConfig struct {
 	Alpha float64
 	// K is the number of candidate nodes sampled per placement ("power of K choices")
 	K int
+	// HybridPlacement enables deterministic occupied-before-empty placement over all eligible nodes.
+	HybridPlacement bool
+	// HybridThreshold is the count below which placement binpacks onto the most-loaded occupied node.
+	HybridThreshold int
+	// HybridCeiling is the hard running-plus-starting count accepted by placement.
+	HybridCeiling int
 }
 
 // DefaultBestOfKConfig returns the default placement configuration
 func DefaultBestOfKConfig() BestOfKConfig {
 	return BestOfKConfig{
-		R:     4,
-		K:     3,
-		Alpha: 0.5,
+		R:               4,
+		K:               3,
+		Alpha:           0.5,
+		HybridThreshold: 4,
+		HybridCeiling:   4,
 	}
 }
 
@@ -92,6 +101,12 @@ func (b *BestOfK) chooseNode(_ context.Context, nodes []*nodemanager.Node, exclu
 	// Fix the config, we want to dynamically update it
 	config := b.getConfig()
 
+	if config.HybridPlacement {
+		candidates := b.eligible(nodes, config, excludedNodes, cpu, features, filterByLabels, requiredLabels)
+
+		return b.chooseHybrid(candidates, config, cpu, features, filterByLabels, requiredLabels)
+	}
+
 	// Filter eligible nodes
 	candidates := b.sample(nodes, config, excludedNodes, cpu, features, filterByLabels, requiredLabels)
 
@@ -118,6 +133,111 @@ func (b *BestOfK) chooseNode(_ context.Context, nodes []*nodemanager.Node, exclu
 	}
 
 	return bestNode, nil
+}
+func (b *BestOfK) tryReserve(node *nodemanager.Node, sandboxID string, resources nodemanager.SandboxResources) bool {
+	config := b.getConfig()
+	if !config.HybridPlacement {
+		node.PlacementMetrics.StartPlacing(sandboxID, resources)
+
+		return true
+	}
+
+	if config.HybridCeiling <= 0 {
+		return false
+	}
+
+	return node.PlacementMetrics.TryStartPlacing(sandboxID, resources, b.runningOrStartingCount(node), uint32(config.HybridCeiling))
+}
+
+func (b *BestOfK) runningOrStartingCount(node *nodemanager.Node) uint32 {
+	metrics := node.Metrics()
+
+	return metrics.SandboxCount + metrics.SandboxStartingCount
+}
+
+func (b *BestOfK) chooseHybrid(candidates []*nodemanager.Node, config BestOfKConfig, cpu CPURequirement, features FeatureRequirement, filterByLabels bool, requiredLabels []string) (*nodemanager.Node, error) {
+	threshold := config.HybridThreshold
+	if threshold <= 0 {
+		threshold = 4
+	}
+
+	type candidate struct {
+		node  *nodemanager.Node
+		count uint32
+	}
+
+	var belowThreshold *candidate
+	var occupied *candidate
+	var empty *candidate
+	for _, node := range candidates {
+		count := b.runningOrStartingCount(node) + node.PlacementMetrics.InProgressCount()
+		current := &candidate{node: node, count: count}
+		switch {
+		case count == 0:
+			if empty == nil || strings.Compare(node.ID, empty.node.ID) < 0 {
+				empty = current
+			}
+		case int(count) < threshold:
+			if belowThreshold == nil || count > belowThreshold.count ||
+				(count == belowThreshold.count && strings.Compare(node.ID, belowThreshold.node.ID) < 0) {
+				belowThreshold = current
+			}
+		default:
+			if occupied == nil || count < occupied.count ||
+				(count == occupied.count && strings.Compare(node.ID, occupied.node.ID) < 0) {
+				occupied = current
+			}
+		}
+	}
+
+	if belowThreshold != nil {
+		return belowThreshold.node, nil
+	}
+	if occupied != nil {
+		return occupied.node, nil
+	}
+	if empty != nil {
+		return empty.node, nil
+	}
+
+	return nil, FailedToPlaceSandboxError{
+		filterByLabels: filterByLabels,
+		requiredLabels: requiredLabels,
+		cpu:            cpu,
+		features:       features,
+	}
+}
+
+func (b *BestOfK) eligible(items []*nodemanager.Node, config BestOfKConfig, excludedNodes map[string]struct{}, cpu CPURequirement, features FeatureRequirement, filterByLabels bool, requiredLabels []string) []*nodemanager.Node {
+	if config.HybridCeiling <= 0 {
+		return nil
+	}
+
+	candidates := make([]*nodemanager.Node, 0, len(items))
+	for _, node := range items {
+		if _, ok := excludedNodes[node.ID]; ok {
+			continue
+		}
+		if !node.CanAcceptNewRequests() {
+			continue
+		}
+		if !NodeSatisfiesCPU(node, cpu) {
+			continue
+		}
+		if !NodeSatisfiesFeatures(node, features) {
+			continue
+		}
+		if filterByLabels && !isNodeLabelsCompatible(node, requiredLabels) {
+			continue
+		}
+		if b.runningOrStartingCount(node)+node.PlacementMetrics.InProgressCount() >= uint32(config.HybridCeiling) {
+			continue
+		}
+
+		candidates = append(candidates, node)
+	}
+
+	return candidates
 }
 
 type FailedToPlaceSandboxError struct {

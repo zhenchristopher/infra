@@ -35,12 +35,23 @@ const (
 
 // Stats contains resource usage statistics from a cgroup
 type Stats struct {
-	CPUUsageUsec  uint64 // microseconds
-	CPUUserUsec   uint64 // microseconds
-	CPUSystemUsec uint64 // microseconds
+	CPUUsageUsec        uint64 // microseconds
+	CPUUserUsec         uint64 // microseconds
+	CPUSystemUsec       uint64 // microseconds
+	CPUThrottledPeriods uint64 // cumulative throttled periods
+	CPUThrottledUsec    uint64 // cumulative throttled microseconds
 
 	MemoryUsageBytes uint64 // bytes
 	MemoryPeakBytes  uint64 // bytes, reset after each GetStats() call
+	MemoryOOMEvents  uint64 // cumulative oom events
+	MemoryOOMKills   uint64 // cumulative oom_kill events
+
+	CPUPressureSomeUsec    uint64 // cumulative stalled microseconds
+	CPUPressureFullUsec    uint64 // cumulative stalled microseconds
+	MemoryPressureSomeUsec uint64 // cumulative stalled microseconds
+	MemoryPressureFullUsec uint64 // cumulative stalled microseconds
+	IOPressureSomeUsec     uint64 // cumulative stalled microseconds
+	IOPressureFullUsec     uint64 // cumulative stalled microseconds
 }
 
 // CgroupHandle represents a created cgroup for a sandbox.
@@ -483,6 +494,10 @@ func (m *managerImpl) getStatsForPath(ctx context.Context, cgroupPath string, me
 			stats.CPUUserUsec = value
 		case "system_usec":
 			stats.CPUSystemUsec = value
+		case "nr_throttled":
+			stats.CPUThrottledPeriods = value
+		case "throttled_usec":
+			stats.CPUThrottledUsec = value
 		}
 	}
 
@@ -492,6 +507,35 @@ func (m *managerImpl) getStatsForPath(ctx context.Context, cgroupPath string, me
 		return nil, fmt.Errorf("failed to read memory.current: %w", err)
 	}
 	stats.MemoryUsageBytes, _ = strconv.ParseUint(strings.TrimSpace(string(memData)), 10, 64)
+
+	memoryEvents, err := readOptionalFile(filepath.Join(cgroupPath, "memory.events"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read memory.events: %w", err)
+	}
+	if memoryEvents != nil {
+		values := parseKeyValueStats(memoryEvents)
+		stats.MemoryOOMEvents = values["oom"]
+		stats.MemoryOOMKills = values["oom_kill"]
+	}
+
+	for _, pressure := range []struct {
+		name string
+		some *uint64
+		full *uint64
+	}{
+		{name: "cpu.pressure", some: &stats.CPUPressureSomeUsec, full: &stats.CPUPressureFullUsec},
+		{name: "memory.pressure", some: &stats.MemoryPressureSomeUsec, full: &stats.MemoryPressureFullUsec},
+		{name: "io.pressure", some: &stats.IOPressureSomeUsec, full: &stats.IOPressureFullUsec},
+	} {
+		data, readErr := readOptionalFile(filepath.Join(cgroupPath, pressure.name))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", pressure.name, readErr)
+		}
+		if data != nil {
+			*pressure.some = parsePressureTotal(data, "some")
+			*pressure.full = parsePressureTotal(data, "full")
+		}
+	}
 
 	if memoryPeakFile != nil {
 		peakBytes, err := m.readAndResetMemoryPeak(ctx, memoryPeakFile)
@@ -503,6 +547,52 @@ func (m *managerImpl) getStatsForPath(ctx context.Context, cgroupPath string, me
 	}
 
 	return stats, nil
+}
+
+func readOptionalFile(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	return data, err
+}
+
+func parseKeyValueStats(data []byte) map[string]uint64 {
+	values := make(map[string]uint64)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		value, err := strconv.ParseUint(fields[1], 10, 64)
+		if err == nil {
+			values[fields[0]] = value
+		}
+	}
+
+	return values
+}
+
+func parsePressureTotal(data []byte, scope string) uint64 {
+	for line := range strings.SplitSeq(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != scope {
+			continue
+		}
+		for _, field := range fields[1:] {
+			raw, ok := strings.CutPrefix(field, "total=")
+			if !ok {
+				continue
+			}
+			value, err := strconv.ParseUint(raw, 10, 64)
+			if err == nil {
+				return value
+			}
+		}
+	}
+
+	return 0
 }
 
 // readAndResetMemoryPeak reads the current peak memory value and resets it for the next interval.

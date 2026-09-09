@@ -39,6 +39,12 @@ variable "api_use_nat" {
   default     = false
 }
 
+variable "private_nodes_enabled" {
+  type        = bool
+  description = "Whether E2B compute nodes use private-only NICs and IAP-only operator access."
+  default     = false
+}
+
 variable "api_nat_ips" {
   type        = list(string)
   description = "List of names for static IP addresses to use for NAT. If empty and api_use_nat is true, IPs will be created automatically."
@@ -183,6 +189,24 @@ variable "client_proxy_port" {
     port = 3002
   }
 }
+
+variable "session_security_policy_rules_managed_externally" {
+  description = "Whether the session Cloud Armor request throttle rules are managed outside the E2B Terraform stack."
+  type        = bool
+  default     = false
+}
+
+variable "session_security_policy_allowed_source_ranges" {
+  description = "Source CIDRs allowed to reach direct sandbox session hosts when this stack owns the policy rules."
+  type        = list(string)
+  default     = ["*"]
+
+  validation {
+    condition     = length(var.session_security_policy_allowed_source_ranges) > 0 && alltrue([for cidr in var.session_security_policy_allowed_source_ranges : cidr == "*" || can(cidrnetmask(cidr))])
+    error_message = "session_security_policy_allowed_source_ranges must contain '*' or valid CIDRs."
+  }
+}
+
 
 variable "loki_cluster_size" {
   type    = number
@@ -351,6 +375,12 @@ variable "environment" {
   default = "prod"
 }
 
+variable "same_project_canary_enabled" {
+  type        = bool
+  description = "Enable the locked same-project canary identity checks while retaining the dev runtime tier."
+  default     = false
+}
+
 variable "otel_collector_resources_memory_mb" {
   type    = number
   default = 1024
@@ -397,6 +427,12 @@ variable "enable_gcp_telemetry_external_metrics" {
   description = "Enable exporting external e2b.* metrics to Google Cloud Monitoring. Requires enable_gcp_telemetry_metrics."
 }
 
+variable "scaffold_clickstack_otlp_endpoint" {
+  type        = string
+  default     = ""
+  description = "Authenticated OTLP/HTTP endpoint used for direct Scaffold OOM telemetry export."
+}
+
 variable "clickhouse_resources_memory_mb" {
   type    = number
   default = 8192
@@ -418,9 +454,68 @@ variable "prefix" {
   default     = "e2b-"
 }
 
+variable "docker_registry_service_account_id" {
+  type        = string
+  description = "Stable account ID for the Docker reverse proxy service account."
+  default     = ""
+
+  validation {
+    condition = (
+      var.docker_registry_service_account_id == "" ||
+      (length(var.docker_registry_service_account_id) >= 6 && length(var.docker_registry_service_account_id) <= 30)
+    )
+    error_message = "docker_registry_service_account_id must be empty or between 6 and 30 characters."
+  }
+}
+
+variable "clickhouse_service_account_id" {
+  type        = string
+  description = "Stable account ID for the ClickHouse backup service account."
+  default     = ""
+
+  validation {
+    condition = (
+      var.clickhouse_service_account_id == "" ||
+      (length(var.clickhouse_service_account_id) >= 6 && length(var.clickhouse_service_account_id) <= 30)
+    )
+    error_message = "clickhouse_service_account_id must be empty or between 6 and 30 characters."
+  }
+}
+
+variable "manage_project_services" {
+  type        = bool
+  description = "Whether this stack owns shared project API enablement."
+  default     = true
+}
+
+variable "orchestration_repository_id" {
+  type        = string
+  description = "Artifact Registry repository retained for legacy orchestration images."
+  default     = "e2b-orchestration"
+}
+
+variable "orchestrator_image_name" {
+  type        = string
+  description = "Immutable Compute image name used by every Nomad node pool when set."
+  default     = ""
+}
+
+variable "cloudflare_api_token_secret_id" {
+  type        = string
+  description = "Existing Cloudflare API token secret to reuse instead of creating a prefixed placeholder."
+  default     = ""
+}
+
+variable "postgres_connection_string_secret_id" {
+  type        = string
+  description = "Existing PostgreSQL DSN secret to reuse instead of creating a prefixed placeholder."
+  default     = ""
+}
+
 variable "bucket_prefix" {
   type = string
 }
+
 
 variable "labels" {
   description = "The labels to attach to resources created by this module"
@@ -546,18 +641,13 @@ variable "remote_repository_enabled" {
 
 variable "client_clusters_config" {
   type = map(object({
-    cluster_size = number
+    cluster_size              = number
+    capacity_manager_max_size = number
 
     machine = object({
       type             = string
       min_cpu_platform = string
     })
-
-    autoscaler = optional(object({
-      size_max      = optional(number)
-      memory_target = optional(number)
-      cpu_target    = optional(number)
-    }))
 
     boot_disk = object({
       disk_type = string
@@ -579,15 +669,11 @@ variable "client_clusters_config" {
 Configuration for the client clusters.
 Format: [
   {
-      "cluster_size": 1,  // Number of nodes (the actual number of nodes may be higher due to autoscaling)
+      "cluster_size": 1,  // Bootstrap node count; runtime size is managed externally
+      "capacity_manager_max_size": 10, // Maximum nodes enforced by the session-aware capacity manager
       "machine": {   // Machine type and CPU platform
           "type": "n1-standard-8",
           "min_cpu_platform": "Intel Skylake"
-      },
-      "autoscaler": {
-          "size_max": 1, // Maximum number of nodes to scale up to
-          "memory_target": 100,  // Target memory utilization percentage for autoscaling (0-100)
-          "cpu_target": 0.7  // Target CPU utilization percentage for autoscaling (0-1)
       },
       "boot_disk": {
           "disk_type": "pd-ssd",  // Boot disk type
@@ -602,6 +688,14 @@ Format: [
   }
 ]
 EOT
+
+  validation {
+    condition = alltrue([
+      for config in values(var.client_clusters_config) :
+      config.capacity_manager_max_size == (var.same_project_canary_enabled ? 3 : 10)
+    ])
+    error_message = "Client capacity manager max size must remain locked at 10, or 3 for the same-project canary."
+  }
 }
 
 variable "build_clusters_config" {
@@ -683,6 +777,29 @@ variable "server_boot_disk_size_gb" {
   default     = 20
 }
 
+variable "server_stateful_data_disk_enabled" {
+  description = "Preserve singleton Nomad and Consul server state across managed instance recreation."
+  type        = bool
+  default     = false
+}
+
+variable "server_stateful_data_disk_allow_fresh_bootstrap" {
+  description = "Authorize a new singleton ACL authority when no prior Nomad or Consul state can be migrated."
+  type        = bool
+  default     = false
+}
+
+variable "server_stateful_data_disk_type" {
+  description = "The GCE disk type for persistent Nomad and Consul server state."
+  type        = string
+  default     = "pd-balanced"
+}
+
+variable "server_stateful_data_disk_size_gb" {
+  description = "The GCE disk size in GB for persistent Nomad and Consul server state."
+  type        = number
+  default     = 10
+}
 variable "clickhouse_boot_disk_type" {
   description = "The GCE boot disk type for the ClickHouse machines."
   type        = string
@@ -762,9 +879,27 @@ variable "default_persistent_volume_type" {
   default = ""
 }
 
+variable "cluster_tag_name" {
+  type        = string
+  description = "Network tag shared by all orchestration instances for discovery and common controls."
+  default     = "orch"
+}
+
 variable "network_name" {
   type    = string
   default = "default"
+}
+
+variable "subnetwork_name" {
+  type        = string
+  description = "Regional subnet name for compute instances. Empty preserves automatic subnet selection."
+  default     = ""
+}
+
+variable "database_runtime_service_account_email" {
+  type        = string
+  description = "Dedicated identity for API instances that consume the PostgreSQL DSN. Empty preserves the shared runtime identity."
+  default     = ""
 }
 
 variable "volume_token_issuer" {
@@ -818,12 +953,22 @@ variable "orchestrator_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
+  validation {
+    condition     = alltrue([for name in keys(var.orchestrator_env_vars) : contains(["E2B_HOST_ADMISSION_ENABLED", "E2B_SANDBOXES_PER_HOST_LIMIT", "E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE"], name)])
+    error_message = "orchestrator_env_vars may only set E2B_HOST_ADMISSION_ENABLED, E2B_SANDBOXES_PER_HOST_LIMIT, and E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE."
+  }
 }
+
 
 variable "api_env_vars" {
   type      = map(string)
   default   = {}
   sensitive = true
+
+  validation {
+    condition     = alltrue([for name in keys(var.api_env_vars) : contains(["E2B_HYBRID_PLACEMENT_ENABLED", "E2B_SANDBOXES_PER_HOST_LIMIT"], name)])
+    error_message = "api_env_vars may only set E2B_HYBRID_PLACEMENT_ENABLED and E2B_SANDBOXES_PER_HOST_LIMIT."
+  }
 }
 
 variable "api_db_migrator_env_vars" {

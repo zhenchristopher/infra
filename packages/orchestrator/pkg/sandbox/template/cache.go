@@ -243,11 +243,18 @@ func (c *Cache) AddSnapshot(
 	// been swapped in; it lets the dedup goroutine release the memfd the
 	// provisional source was serving from.
 	provisionalSwapDone func(),
-) error {
+) (func(), error) {
+	pinnedKeys := make([]build.DiffStoreKey, 0, 2)
+	addPinned := func(diff build.Diff) {
+		c.buildStore.Add(diff)
+		key := diff.CacheKey()
+		c.buildStore.Pin(key)
+		pinnedKeys = append(pinnedKeys, key)
+	}
 	switch memfileDiff.(type) {
 	case *build.NoDiff:
 	default:
-		c.buildStore.Add(memfileDiff)
+		addPinned(memfileDiff)
 	}
 	if provisionalMemfileDiff != nil {
 		if _, ok := provisionalMemfileDiff.(*build.NoDiff); !ok {
@@ -265,7 +272,16 @@ func (c *Cache) AddSnapshot(
 	switch rootfsDiff.(type) {
 	case *build.NoDiff:
 	default:
-		c.buildStore.Add(rootfsDiff)
+		addPinned(rootfsDiff)
+	}
+
+	var releaseOnce sync.Once
+	releaseSnapshotPins := func() {
+		releaseOnce.Do(func() {
+			for _, key := range pinnedKeys {
+				c.buildStore.Unpin(key)
+			}
+		})
 	}
 
 	// Build the local template from the provisional header (resolved now) so
@@ -294,6 +310,7 @@ func (c *Cache) AddSnapshot(
 		durableMemfileHeader,
 	)
 	if err != nil {
+		releaseSnapshotPins()
 		// The swap goroutine below (which signals the release) is never spawned on
 		// this early-return path, so signal here — otherwise the dedup goroutine
 		// holds the provisional memfd for the full swap grace before releasing.
@@ -301,7 +318,7 @@ func (c *Cache) AddSnapshot(
 			provisionalSwapDone()
 		}
 
-		return fmt.Errorf("failed to create template cache from storage: %w", err)
+		return nil, fmt.Errorf("failed to create template cache from storage: %w", err)
 	}
 
 	// Use the template that is actually resident in the cache, not the local
@@ -404,7 +421,7 @@ func (c *Cache) AddSnapshot(
 		}()
 	}
 
-	return nil
+	return releaseSnapshotPins, nil
 }
 
 // GetCachedTemplate returns the template for buildID if it is currently in the cache.

@@ -1,6 +1,7 @@
 package nodemanager
 
 import (
+	"sync"
 	"sync/atomic"
 
 	"github.com/e2b-dev/infra/packages/shared/pkg/smap"
@@ -13,6 +14,7 @@ type SandboxResources struct {
 
 type PlacementMetrics struct {
 	sandboxesInProgress *smap.Map[SandboxResources]
+	reservationMu       sync.Mutex
 
 	createSuccess atomic.Uint64
 	createFails   atomic.Uint64
@@ -50,6 +52,19 @@ func (p *PlacementMetrics) InProgressCount() uint32 {
 
 func (p *PlacementMetrics) StartPlacing(sandboxID string, resources SandboxResources) {
 	p.sandboxesInProgress.Insert(sandboxID, resources)
+}
+
+func (p *PlacementMetrics) TryStartPlacing(sandboxID string, resources SandboxResources, observedHostCount uint32, ceiling uint32) bool {
+	p.reservationMu.Lock()
+	defer p.reservationMu.Unlock()
+
+	if ceiling == 0 || observedHostCount+p.InProgressCount() >= ceiling {
+		return false
+	}
+
+	p.sandboxesInProgress.Insert(sandboxID, resources)
+
+	return true
 }
 
 func (p *PlacementMetrics) removeSandbox(sandboxID string) {

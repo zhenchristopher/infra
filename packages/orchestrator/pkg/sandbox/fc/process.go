@@ -16,6 +16,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapio"
@@ -37,6 +38,11 @@ import (
 )
 
 var tracer = otel.Tracer("github.com/e2b-dev/infra/packages/orchestrator/pkg/sandbox/fc")
+var fcProcessExits = utils.Must(otel.Meter("github.com/e2b-dev/infra/packages/orchestrator/pkg/sandbox/fc").Int64Counter(
+	"orchestrator.sandbox.fc.exit",
+	metric.WithDescription("Firecracker process exits grouped by result, signal, and exit code."),
+	metric.WithUnit("{exit}"),
+))
 
 // fcLogFilter wraps an io.Writer and suppresses Firecracker FlushMetrics
 // request/response log line pairs that fire every few seconds and create
@@ -289,6 +295,13 @@ func (p *Process) configure(
 		defer stdoutWriter.Close()
 
 		waitErr := p.cmd.Wait()
+		exitResult, exitSignal, exitCode := firecrackerExitDetails(waitErr)
+		fcProcessExits.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("sandbox_id", p.files.SandboxID),
+			attribute.String("result", exitResult),
+			attribute.String("signal", exitSignal),
+			attribute.Int("exit_code", exitCode),
+		))
 		if waitErr != nil {
 			var exitErr *exec.ExitError
 			if errors.As(waitErr, &exitErr) {
@@ -300,7 +313,12 @@ func (p *Process) configure(
 				}
 			}
 
-			logger.L().Error(ctx, "error waiting for fc process", zap.Error(waitErr))
+			logger.L().Error(ctx, "error waiting for fc process",
+				logger.WithSandboxID(p.files.SandboxID),
+				zap.String("exit_result", exitResult),
+				zap.String("exit_signal", exitSignal),
+				zap.Int("exit_code", exitCode),
+				zap.Error(waitErr))
 
 			errMsg := fmt.Errorf("error waiting for fc process: %w", waitErr)
 			p.Exit.SetError(errMsg)
@@ -324,6 +342,30 @@ func (p *Process) configure(
 	}
 
 	return nil
+}
+
+func firecrackerExitDetails(waitErr error) (result, signal string, exitCode int) {
+	result = "success"
+	signal = "none"
+	if waitErr == nil {
+		return result, signal, 0
+	}
+
+	result = "error"
+	exitCode = -1
+	var exitErr *exec.ExitError
+	if !errors.As(waitErr, &exitErr) {
+		return result, signal, exitCode
+	}
+
+	exitCode = exitErr.ExitCode()
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	if ok && status.Signaled() {
+		result = "signal"
+		signal = status.Signal().String()
+	}
+
+	return result, signal, exitCode
 }
 
 func (p *Process) Create(

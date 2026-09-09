@@ -54,6 +54,11 @@ resource "google_compute_backend_service" "ingress" {
   backend {
     group = var.api_instance_group
   }
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
 }
 
 resource "google_compute_backend_service" "h2c_ingress" {
@@ -75,6 +80,11 @@ resource "google_compute_backend_service" "h2c_ingress" {
 
   backend {
     group = var.api_instance_group
+  }
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
   }
 }
 

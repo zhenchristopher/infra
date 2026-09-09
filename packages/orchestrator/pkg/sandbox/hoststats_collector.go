@@ -26,7 +26,8 @@ type HostStatsCollector struct {
 	delivery    hoststats.Delivery
 	cgroupStats CgroupStatsFunc
 
-	prev hoststats.SandboxHostStat // previous sample; seeded with zero counters at construction
+	prev            hoststats.SandboxHostStat // previous sample; seeded with zero counters at construction
+	prevCgroupStats cgroup.Stats
 
 	stopCh    chan struct{}
 	stoppedCh chan struct{}
@@ -108,6 +109,8 @@ func (h *HostStatsCollector) CollectSample(ctx context.Context) error {
 		SandboxType:              h.metadata.SandboxType.String(),
 	}
 
+	recordHostCgroupMetrics(ctx, h.metadata, cgroupStats, &h.prevCgroupStats)
+	h.prevCgroupStats = *cgroupStats
 	if err := h.delivery.Push(stat); err != nil {
 		return fmt.Errorf("failed to push stat to delivery: %w", err)
 	}

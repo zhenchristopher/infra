@@ -125,7 +125,7 @@ resource "google_compute_region_instance_group_manager" "pool" {
   # Server is a stateful cluster, so the update strategy used to roll out a new GCE Instance Template must be
   # a rolling update.
   update_policy {
-    type                         = var.environment == "dev" ? "PROACTIVE" : "OPPORTUNISTIC"
+    type                         = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
     minimal_action               = "REPLACE"
     max_surge_fixed              = 10
     max_surge_percent            = null
@@ -144,7 +144,8 @@ resource "google_compute_region_instance_group_manager" "pool" {
 }
 
 data "google_compute_image" "source_image" {
-  family = var.image_family
+  name   = var.image_name != "" ? var.image_name : null
+  family = var.image_name == "" ? var.image_family : null
 }
 
 resource "google_compute_instance_template" "template" {
@@ -160,7 +161,7 @@ resource "google_compute_instance_template" "template" {
       goog-ops-agent-policy = "v2-x86-template-1-2-0-${var.gcp_zone}"
     } : {})
   )
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-build"]
   metadata_startup_script = local.startup_script
   metadata = {
     enable-osconfig         = "TRUE",
@@ -174,7 +175,7 @@ resource "google_compute_instance_template" "template" {
   disk {
     auto_delete  = true
     boot         = true
-    source_image = data.google_compute_image.source_image.id
+    source_image = can(regex("^[0-9]+$", var.image_name)) ? "projects/${data.google_compute_image.source_image.project}/global/images/${data.google_compute_image.source_image.image_id}" : data.google_compute_image.source_image.id
     disk_size_gb = var.boot_disk.size_gb
     disk_type    = var.boot_disk.disk_type
   }
@@ -208,11 +209,12 @@ resource "google_compute_instance_template" "template" {
   }
 
   network_interface {
-    network  = var.network_name
-    nic_type = var.network_interface_type
+    network    = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
+    nic_type   = var.network_interface_type
 
     dynamic "access_config" {
-      for_each = ["public_ip"]
+      for_each = var.private_nodes_enabled ? [] : ["public_ip"]
       content {}
     }
   }

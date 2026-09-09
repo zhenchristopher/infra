@@ -47,7 +47,7 @@ output "core_repository_name" {
 }
 
 output "cloudflare_api_token_secret_name" {
-  value = google_secret_manager_secret.cloudflare_api_token.name
+  value = var.cloudflare_api_token_secret_id != "" ? var.cloudflare_api_token_secret_id : google_secret_manager_secret.cloudflare_api_token[0].name
 }
 
 output "notification_email_secret_version" {
@@ -75,7 +75,7 @@ output "ory_project_api_key_secret_exists" {
 }
 
 output "postgres_connection_string_secret_name" {
-  value = google_secret_manager_secret.postgres_connection_string.name
+  value = var.postgres_connection_string_secret_id != "" ? var.postgres_connection_string_secret_id : google_secret_manager_secret.postgres_connection_string[0].name
 }
 
 output "loki_bucket_name" {

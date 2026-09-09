@@ -14,6 +14,30 @@ data "google_secret_manager_secret_version" "postgres_connection_string" {
   secret = module.init.postgres_connection_string_secret_name
 }
 
+resource "google_storage_bucket_iam_member" "database_runtime_setup_reader" {
+  count = var.database_runtime_service_account_email != "" ? 1 : 0
+
+  bucket = module.init.cluster_setup_bucket_name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${var.database_runtime_service_account_email}"
+}
+
+resource "google_project_iam_member" "database_runtime_logging_writer" {
+  count = var.database_runtime_service_account_email != "" ? 1 : 0
+
+  project = var.gcp_project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${var.database_runtime_service_account_email}"
+}
+
+resource "google_project_iam_member" "database_runtime_network_viewer" {
+  count = var.database_runtime_service_account_email != "" ? 1 : 0
+
+  project = var.gcp_project_id
+  role    = "roles/compute.networkViewer"
+  member  = "serviceAccount:${var.database_runtime_service_account_email}"
+}
+
 data "google_secret_manager_secret_version" "postgres_read_replica_connection_string" {
   secret = google_secret_manager_secret.postgres_read_replica_connection_string.id
 

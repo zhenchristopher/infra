@@ -22,6 +22,9 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	InfoService_ServiceInfo_FullMethodName           = "/InfoService/ServiceInfo"
 	InfoService_ServiceStatusOverride_FullMethodName = "/InfoService/ServiceStatusOverride"
+	InfoService_HostAdmission_FullMethodName         = "/InfoService/HostAdmission"
+	InfoService_HostDrain_FullMethodName             = "/InfoService/HostDrain"
+	InfoService_HostReady_FullMethodName             = "/InfoService/HostReady"
 )
 
 // InfoServiceClient is the client API for InfoService service.
@@ -30,6 +33,9 @@ const (
 type InfoServiceClient interface {
 	ServiceInfo(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ServiceInfoResponse, error)
 	ServiceStatusOverride(ctx context.Context, in *ServiceStatusChangeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	HostAdmission(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HostAdmissionSnapshot, error)
+	HostDrain(ctx context.Context, in *HostDrainRequest, opts ...grpc.CallOption) (*HostAdmissionSnapshot, error)
+	HostReady(ctx context.Context, in *HostReadyRequest, opts ...grpc.CallOption) (*HostAdmissionSnapshot, error)
 }
 
 type infoServiceClient struct {
@@ -60,12 +66,45 @@ func (c *infoServiceClient) ServiceStatusOverride(ctx context.Context, in *Servi
 	return out, nil
 }
 
+func (c *infoServiceClient) HostAdmission(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HostAdmissionSnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HostAdmissionSnapshot)
+	err := c.cc.Invoke(ctx, InfoService_HostAdmission_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *infoServiceClient) HostDrain(ctx context.Context, in *HostDrainRequest, opts ...grpc.CallOption) (*HostAdmissionSnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HostAdmissionSnapshot)
+	err := c.cc.Invoke(ctx, InfoService_HostDrain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *infoServiceClient) HostReady(ctx context.Context, in *HostReadyRequest, opts ...grpc.CallOption) (*HostAdmissionSnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HostAdmissionSnapshot)
+	err := c.cc.Invoke(ctx, InfoService_HostReady_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InfoServiceServer is the server API for InfoService service.
 // All implementations must embed UnimplementedInfoServiceServer
 // for forward compatibility.
 type InfoServiceServer interface {
 	ServiceInfo(context.Context, *emptypb.Empty) (*ServiceInfoResponse, error)
 	ServiceStatusOverride(context.Context, *ServiceStatusChangeRequest) (*emptypb.Empty, error)
+	HostAdmission(context.Context, *emptypb.Empty) (*HostAdmissionSnapshot, error)
+	HostDrain(context.Context, *HostDrainRequest) (*HostAdmissionSnapshot, error)
+	HostReady(context.Context, *HostReadyRequest) (*HostAdmissionSnapshot, error)
 	mustEmbedUnimplementedInfoServiceServer()
 }
 
@@ -81,6 +120,15 @@ func (UnimplementedInfoServiceServer) ServiceInfo(context.Context, *emptypb.Empt
 }
 func (UnimplementedInfoServiceServer) ServiceStatusOverride(context.Context, *ServiceStatusChangeRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ServiceStatusOverride not implemented")
+}
+func (UnimplementedInfoServiceServer) HostAdmission(context.Context, *emptypb.Empty) (*HostAdmissionSnapshot, error) {
+	return nil, status.Error(codes.Unimplemented, "method HostAdmission not implemented")
+}
+func (UnimplementedInfoServiceServer) HostDrain(context.Context, *HostDrainRequest) (*HostAdmissionSnapshot, error) {
+	return nil, status.Error(codes.Unimplemented, "method HostDrain not implemented")
+}
+func (UnimplementedInfoServiceServer) HostReady(context.Context, *HostReadyRequest) (*HostAdmissionSnapshot, error) {
+	return nil, status.Error(codes.Unimplemented, "method HostReady not implemented")
 }
 func (UnimplementedInfoServiceServer) mustEmbedUnimplementedInfoServiceServer() {}
 func (UnimplementedInfoServiceServer) testEmbeddedByValue()                     {}
@@ -139,6 +187,60 @@ func _InfoService_ServiceStatusOverride_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InfoService_HostAdmission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InfoServiceServer).HostAdmission(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InfoService_HostAdmission_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InfoServiceServer).HostAdmission(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InfoService_HostDrain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HostDrainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InfoServiceServer).HostDrain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InfoService_HostDrain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InfoServiceServer).HostDrain(ctx, req.(*HostDrainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _InfoService_HostReady_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HostReadyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InfoServiceServer).HostReady(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InfoService_HostReady_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InfoServiceServer).HostReady(ctx, req.(*HostReadyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InfoService_ServiceDesc is the grpc.ServiceDesc for InfoService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -153,6 +255,18 @@ var InfoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ServiceStatusOverride",
 			Handler:    _InfoService_ServiceStatusOverride_Handler,
+		},
+		{
+			MethodName: "HostAdmission",
+			Handler:    _InfoService_HostAdmission_Handler,
+		},
+		{
+			MethodName: "HostDrain",
+			Handler:    _InfoService_HostDrain_Handler,
+		},
+		{
+			MethodName: "HostReady",
+			Handler:    _InfoService_HostReady_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -25,8 +25,9 @@ resource "nomad_job" "template_manager" {
     node_pool     = var.node_pool
     current_count = tonumber(data.external.template_manager_count.result.count)
 
-    port            = var.port
-    artifact_source = var.artifact_source
-    job_env_vars    = local.job_env_vars
+    port                 = var.port
+    artifact_source      = var.artifact_source
+    envd_artifact_source = var.envd_artifact_source
+    job_env_vars         = local.job_env_vars
   })
 }

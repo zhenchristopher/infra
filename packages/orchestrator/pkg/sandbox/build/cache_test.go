@@ -312,6 +312,34 @@ func TestDiffStorePinnedSkippedByEviction(t *testing.T) {
 	assert.True(t, store.isBeingDeleted(oldest.CacheKey()))
 }
 
+// Independent upload and provisional-resume owners may pin the same diff. One
+// owner's release must not expose it to disk-pressure eviction.
+func TestDiffStorePinsAreReferenceCounted(t *testing.T) {
+	t.Parallel()
+	cachePath := t.TempDir()
+
+	c, err := cfg.Parse()
+	require.NoError(t, err)
+	store, err := NewDiffStore(c, flagsWithMaxBuildCachePercentage(t, 100), cachePath, 60*time.Second, 4*time.Second)
+	require.NoError(t, err)
+
+	diff := newRootFSDiff(t, cachePath, "nested-pin")
+	store.Add(diff)
+	key := diff.CacheKey()
+	store.Pin(key)
+	store.Pin(key)
+
+	store.Unpin(key)
+	evicted, err := store.deleteOldestFromCache(t.Context())
+	require.NoError(t, err)
+	assert.False(t, evicted, "one remaining owner must keep the diff pinned")
+
+	store.Unpin(key)
+	evicted, err = store.deleteOldestFromCache(t.Context())
+	require.NoError(t, err)
+	assert.True(t, evicted, "the diff becomes eligible after its final release")
+}
+
 // A Pin that lands after a delete was already scheduled (the Add→Pin window, or
 // a Pin racing the eviction scan) must still protect the entry: the scheduled
 // delete re-checks isPinned when it fires and skips the eviction, so the entry

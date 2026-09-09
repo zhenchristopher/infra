@@ -206,6 +206,18 @@ func (s *Server) Create(ctx context.Context, req *orchestrator.SandboxCreateRequ
 
 	maxRunningSandboxesPerNode := s.featureFlags.IntFlag(ctx, featureflags.MaxSandboxesPerNode)
 
+	admissionReserved, err := s.admission.BeginCreate(ctx, req.GetSandbox().GetSandboxId())
+	if err != nil {
+		return nil, err
+	}
+	if admissionReserved {
+		defer func() {
+			if err := s.admission.EndCreate(context.WithoutCancel(ctx), req.GetSandbox().GetSandboxId()); err != nil {
+				logger.L().Error(ctx, "failed to release host admission reservation", zap.Error(err), logger.WithSandboxID(req.GetSandbox().GetSandboxId()))
+			}
+		}()
+	}
+
 	runningSandboxes := s.sandboxFactory.Sandboxes.Count()
 	if runningSandboxes >= maxRunningSandboxesPerNode {
 		telemetry.ReportEvent(ctx, "max number of running sandboxes reached")
@@ -228,6 +240,10 @@ func (s *Server) Create(ctx context.Context, req *orchestrator.SandboxCreateRequ
 		}
 	}
 	defer s.startingSandboxes.Release(1)
+
+	if err := s.ensureRunningPlusStartingCapacity(ctx, s.sandboxFactory.Sandboxes.Count(), maxRunningSandboxesPerNode); err != nil {
+		return nil, err
+	}
 
 	template, err := s.templateCache.GetTemplate(
 		ctx,
@@ -420,6 +436,17 @@ func (s *Server) Create(ctx context.Context, req *orchestrator.SandboxCreateRequ
 		// flag, which drifts from this frozen value whenever the flag moves.
 		ResolvedFirecrackerVersion: resolvedFCVersion,
 	}, nil
+}
+
+func (s *Server) ensureRunningPlusStartingCapacity(ctx context.Context, runningSandboxes int, maxRunningSandboxesPerNode int) error {
+	runningPlusStarting := runningSandboxes + int(s.startingSandboxes.Used())
+	if runningPlusStarting <= maxRunningSandboxesPerNode {
+		return nil
+	}
+
+	telemetry.ReportEvent(ctx, "max number of running plus starting sandboxes reached")
+
+	return status.Errorf(codes.ResourceExhausted, "max number of running plus starting sandboxes on node reached (%d), please retry", maxRunningSandboxesPerNode)
 }
 
 func createVolumeMountModelsFromAPI(volumeMounts []*orchestrator.SandboxVolumeMount) ([]sandbox.VolumeMountConfig, error) {
@@ -1285,6 +1312,12 @@ func (s *Server) checkpointResumeFresh(ctx context.Context, sbx *sandbox.Sandbox
 
 		return nil, status.Errorf(codes.Internal, "error snapshotting sandbox '%s': %s", in.GetSandboxId(), err)
 	}
+	uploadHandedOff := false
+	defer func() {
+		if !uploadHandedOff {
+			res.completeUpload(context.WithoutCancel(ctx), errors.New("checkpoint abandoned before upload"))
+		}
+	}()
 
 	// Get the template for resume
 	template, err := s.templateCache.GetTemplate(ctx, in.GetBuildId(), true, false,
@@ -1368,6 +1401,7 @@ func (s *Server) checkpointResumeFresh(ctx context.Context, sbx *sandbox.Sandbox
 
 	// On upload failure, tear down the resumed sandbox — without a persisted
 	// snapshot it cannot be paused or resumed later.
+	uploadHandedOff = true
 	if err := s.runCheckpointUpload(ctx, resumedSbx, res, in, codes.Internal, func() {
 		resumedSbx.SetStopReason(sandbox.StopReasonKilled)
 		s.sandboxFactory.Sandboxes.MarkStopping(ctx, resumedSbx.Runtime.SandboxID, resumedSbx.LifecycleID)
@@ -1485,7 +1519,7 @@ func (s *Server) snapshotAndCacheSandbox(
 		return nil, fmt.Errorf("error snapshotting sandbox: %w", err)
 	}
 
-	err = s.templateCache.AddSnapshot(
+	releaseSnapshotPins, err := s.templateCache.AddSnapshot(
 		ctx,
 		meta.Template.BuildID,
 		snapshot.MemorySnapshot.DiffHeader,
@@ -1514,6 +1548,8 @@ func (s *Server) snapshotAndCacheSandbox(
 	// failed AddSnapshot doesn't leave an orphan future blocking re-registration.
 	upload, err := sandbox.NewUpload(ctx, s.uploads, snapshot, s.persistence, s.config.StorageConfig.CompressConfig, s.featureFlags, storage.UseCasePause, objectMetadata)
 	if err != nil {
+		releaseSnapshotPins()
+
 		return nil, fmt.Errorf("register upload: %w", err)
 	}
 
@@ -1524,6 +1560,8 @@ func (s *Server) snapshotAndCacheSandbox(
 	peerEnabled := s.featureFlags.BoolFlag(ctx, featureflags.PeerToPeerChunkTransferFlag)
 
 	completeUpload := func(ctx context.Context, uploadErr error) {
+		defer releaseSnapshotPins()
+
 		upload.Finish(ctx, uploadErr)
 
 		if !peerEnabled {

@@ -16,6 +16,12 @@ variable "artifact_source" {
   description = "Full artifact URL for the template-manager binary (e.g. gcs::https://... or s3::https://...)"
 }
 
+variable "envd_artifact_source" {
+  type        = string
+  description = "Optional immutable EnvD artifact URL for release-pinned template builds."
+  default     = ""
+}
+
 // Nomad API access for job count query
 variable "nomad_addr" {
   type        = string

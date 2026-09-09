@@ -71,6 +71,8 @@ resource "google_project_iam_member" "network_viewer" {
 }
 
 resource "google_project_iam_member" "monitoring_editor" {
+  count = var.enable_gcp_telemetry_metrics ? 1 : 0
+
   project = var.gcp_project_id
   member  = "serviceAccount:${var.google_service_account_email}"
   role    = "roles/monitoring.editor"
@@ -109,17 +111,22 @@ module "network" {
   api_use_nat              = var.api_use_nat
   api_nat_ips              = var.api_nat_ips
   api_nat_min_ports_per_vm = var.api_nat_min_ports_per_vm
+  private_nodes_enabled    = var.private_nodes_enabled
 
   ingress_port                            = var.ingress_port
   api_port                                = var.api_port
+  docker_reverse_proxy_enabled            = var.docker_reverse_proxy_enabled
   docker_reverse_proxy_port               = var.docker_reverse_proxy_port
   network_name                            = var.network_name
   domain_name                             = var.domain_name
   additional_domains                      = var.additional_domains
   additional_api_paths_handled_by_ingress = var.additional_api_paths_handled_by_ingress
 
-  client_proxy_port        = var.client_proxy_port
-  client_proxy_health_port = var.client_proxy_health_port
+  client_proxy_port                                = var.client_proxy_port
+  client_proxy_health_port                         = var.client_proxy_health_port
+  session_security_policy_rules_managed_externally = var.session_security_policy_rules_managed_externally
+  session_security_policy_allowed_source_ranges    = var.session_security_policy_allowed_source_ranges
+
 
   api_instance_group        = google_compute_instance_group_manager.api_pool.instance_group
   extra_api_instance_groups = var.extra_api_instance_groups
@@ -155,6 +162,7 @@ module "build_cluster" {
   gcp_zone                     = var.gcp_zone
   google_service_account_email = var.google_service_account_email
   google_service_account_key   = var.google_service_account_key
+  subnetwork_name                = var.subnetwork_name
 
   cluster_size     = each.value.cluster_size
   cache_disks      = each.value.cache_disks
@@ -165,7 +173,9 @@ module "build_cluster" {
 
   cluster_name              = "${var.prefix}${var.build_cluster_name}-${each.key}"
   image_family              = var.build_image_family
+  image_name                = var.build_image_name
   network_name              = var.network_name
+  private_nodes_enabled     = var.private_nodes_enabled
   base_hugepages_percentage = coalesce((each.value.hugepages_percentage), local.build_base_hugepages_percentage)
   network_interface_type    = each.value.network_interface_type
   node_labels               = each.value.node_labels
@@ -207,24 +217,27 @@ module "build_cluster" {
 
 module "client_cluster" {
   for_each = var.client_clusters_config
-  source   = "./worker-cluster"
+  source   = "./client-worker-cluster"
 
   gcp_region                   = var.gcp_region
   gcp_zone                     = var.gcp_zone
   google_service_account_email = var.google_service_account_email
   google_service_account_key   = var.google_service_account_key
+  subnetwork_name                = var.subnetwork_name
 
-  cluster_size     = each.value.cluster_size
-  cache_disks      = each.value.cache_disks
-  machine_type     = each.value.machine.type
-  min_cpu_platform = each.value.machine.min_cpu_platform
-  boot_disk        = each.value.boot_disk
-  autoscaler       = each.value.autoscaler
+  cluster_size              = each.value.cluster_size
+  capacity_manager_max_size = each.value.capacity_manager_max_size
+  cache_disks               = each.value.cache_disks
+  machine_type              = each.value.machine.type
+  min_cpu_platform          = each.value.machine.min_cpu_platform
+  boot_disk                 = each.value.boot_disk
 
   // This is here for backwards compatibility
   cluster_name              = each.key == "default" ? "${var.prefix}${var.client_cluster_name}" : "${var.prefix}${var.client_cluster_name}-${each.key}"
   image_family              = var.client_image_family
+  image_name                = var.client_image_name
   network_name              = var.network_name
+  private_nodes_enabled     = var.private_nodes_enabled
   base_hugepages_percentage = coalesce((each.value.hugepages_percentage), local.client_base_hugepages_percentage)
   network_interface_type    = each.value.network_interface_type
   node_labels               = each.value.node_labels

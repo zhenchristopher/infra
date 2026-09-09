@@ -211,6 +211,13 @@ func WithAllocatedMemoryBytes(bytes uint64) TestOptions {
 	}
 }
 
+func WithSandboxCounts(running, starting uint32) TestOptions {
+	return func(node *TestNode) {
+		node.metrics.SandboxCount = running
+		node.metrics.SandboxStartingCount = starting
+	}
+}
+
 // MockSandboxClientCustom allows custom error logic per call
 type MockSandboxClientCustom struct {
 	orchestrator.SandboxServiceClient

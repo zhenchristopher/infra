@@ -3,6 +3,8 @@ package featureflags
 import (
 	"context"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/launchdarkly/go-sdk-common/v3/ldcontext"
@@ -23,6 +25,13 @@ var launchDarklyOfflineStore = ldtestdata.DataSource()
 var launchDarklyApiKey = os.Getenv("LAUNCH_DARKLY_API_KEY")
 
 const waitForInit = 5 * time.Second
+
+const (
+	hybridPlacementOverrideEnv = "E2B_HYBRID_PLACEMENT_ENABLED"
+	hostAdmissionOverrideEnv   = "E2B_HOST_ADMISSION_ENABLED"
+	sandboxLimitOverrideEnv    = "E2B_SANDBOXES_PER_HOST_LIMIT"
+	buildCacheUsageOverrideEnv = "E2B_BUILD_CACHE_MAX_USAGE_PERCENTAGE"
+)
 
 type Client struct {
 	ld               *ldclient.LDClient
@@ -111,7 +120,37 @@ func (c *Client) RegisterContextProvider(provider ContextProvider) {
 }
 
 func (c *Client) BoolFlag(ctx context.Context, flag BoolFlag, contexts ...ldcontext.Context) bool {
+	if value, ok := safetyBoolOverride(ctx, flag); ok {
+		return value
+	}
+
 	return getFlag(ctx, c.ld, c.ld.BoolVariationCtx, flag, c.allContexts(ctx, contexts))
+}
+
+func safetyBoolOverride(ctx context.Context, flag BoolFlag) (bool, bool) {
+	var envName string
+	switch flag.Key() {
+	case HybridPlacementFlag.Key():
+		envName = hybridPlacementOverrideEnv
+	case HostAdmissionFlag.Key():
+		envName = hostAdmissionOverrideEnv
+	default:
+		return false, false
+	}
+
+	raw, exists := os.LookupEnv(envName)
+	if !exists {
+		return false, false
+	}
+
+	value, err := strconv.ParseBool(strings.TrimSpace(raw))
+	if err != nil {
+		logger.L().Warn(ctx, "invalid safety feature flag environment override; failing closed", zap.String("flag", flag.Key()), zap.String("environment", envName))
+
+		return false, true
+	}
+
+	return value, true
 }
 
 func (c *Client) JSONFlag(ctx context.Context, flag JSONFlag, contexts ...ldcontext.Context) ldvalue.Value {
@@ -138,7 +177,37 @@ func (c *Client) WatchJSONFlag(ctx context.Context, flag JSONFlag, contexts ...l
 }
 
 func (c *Client) IntFlag(ctx context.Context, flag IntFlag, contexts ...ldcontext.Context) int {
+	if value, ok := safetyIntOverride(ctx, flag); ok {
+		return value
+	}
+
 	return getFlag(ctx, c.ld, c.ld.IntVariationCtx, flag, c.allContexts(ctx, contexts))
+}
+
+func safetyIntOverride(ctx context.Context, flag IntFlag) (int, bool) {
+	var envName string
+	switch flag.Key() {
+	case HybridPlacementThreshold.Key(), HybridPlacementCeiling.Key(), MaxSandboxesPerNode.Key():
+		envName = sandboxLimitOverrideEnv
+	case BuildCacheMaxUsagePercentage.Key():
+		envName = buildCacheUsageOverrideEnv
+	default:
+		return 0, false
+	}
+
+	raw, exists := os.LookupEnv(envName)
+	if !exists {
+		return 0, false
+	}
+
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		logger.L().Warn(ctx, "invalid safety integer feature flag environment override; failing closed", zap.String("flag", flag.Key()), zap.String("environment", envName))
+
+		return 0, true
+	}
+
+	return value, true
 }
 
 func (c *Client) StringFlag(ctx context.Context, flag StringFlag, contexts ...ldcontext.Context) string {

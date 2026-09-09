@@ -21,15 +21,26 @@ func TestBasicAcquireTryRelease(t *testing.T) {
 	s, err := NewAdjustableSemaphore(2)
 	require.NoError(t, err)
 
+	require.Zero(t, s.Used())
+
 	err = s.Acquire(t.Context(), 1)
 	require.NoError(t, err)
+	require.EqualValues(t, 1, s.Used())
+
 	got := s.TryAcquire(1)
 	require.True(t, got, "TryAcquire should have succeeded with remaining capacity")
+	require.EqualValues(t, 2, s.Used())
+
 	got = s.TryAcquire(1)
 	require.False(t, got, "TryAcquire should have failed (limit exceeded)")
+	require.EqualValues(t, 2, s.Used())
+
 	s.Release(2) // returns everything
+	require.Zero(t, s.Used())
+
 	got = s.TryAcquire(2)
 	require.True(t, got, "TryAcquire should succeed after Release")
+	require.EqualValues(t, 2, s.Used())
 }
 
 // -----------------------------------------------------------------------------

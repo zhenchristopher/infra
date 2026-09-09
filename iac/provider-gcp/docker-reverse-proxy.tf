@@ -1,5 +1,5 @@
 resource "google_service_account" "docker_registry_service_account" {
-  account_id   = "${var.prefix}docker-reverse-proxy-sa"
+  account_id   = var.docker_registry_service_account_id == "" ? "${var.prefix}docker-reverse-proxy-sa" : var.docker_registry_service_account_id
   display_name = "Docker Reverse Proxy Service Account"
 }
 

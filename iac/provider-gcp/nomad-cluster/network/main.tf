@@ -37,65 +37,67 @@ locals {
   subdomain    = local.domain_info[var.domain_name].prefix
   root_domain  = local.domain_info[var.domain_name].root_domain
 
-  backends = {
-    session = {
-      protocol                        = "HTTP"
-      port                            = var.client_proxy_port.port
-      port_name                       = var.client_proxy_port.name
-      timeout_sec                     = 86400
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path       = var.client_proxy_health_port.path
-        port               = var.client_proxy_health_port.port
-        timeout_sec        = 3
-        check_interval_sec = 3
+  backends = merge(
+    {
+      session = {
+        protocol                        = "HTTP"
+        port                            = var.client_proxy_port.port
+        port_name                       = var.client_proxy_port.name
+        timeout_sec                     = 86400
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path       = var.client_proxy_health_port.path
+          port               = var.client_proxy_health_port.port
+          timeout_sec        = 3
+          check_interval_sec = 3
+        }
+        groups = [{ group = var.api_instance_group }]
       }
-      groups = [{ group = var.api_instance_group }]
-    }
-    api = {
-      protocol                        = "HTTP"
-      port                            = var.api_port.port
-      port_name                       = var.api_port.name
-      timeout_sec                     = 80
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path       = var.api_port.health_path
-        port               = var.api_port.port
-        timeout_sec        = 3
-        check_interval_sec = 3
+      api = {
+        protocol                        = "HTTP"
+        port                            = var.api_port.port
+        port_name                       = var.api_port.name
+        timeout_sec                     = 80
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path       = var.api_port.health_path
+          port               = var.api_port.port
+          timeout_sec        = 3
+          check_interval_sec = 3
+        }
+        groups = concat(
+          [{ group = var.api_instance_group }],
+          [for g in var.extra_api_instance_groups : { group = g }],
+        )
       }
-      groups = concat(
-        [{ group = var.api_instance_group }],
-        [for g in var.extra_api_instance_groups : { group = g }],
-      )
-    }
-    docker-reverse-proxy = {
-      protocol                        = "HTTP"
-      port                            = var.docker_reverse_proxy_port.port
-      port_name                       = var.docker_reverse_proxy_port.name
-      timeout_sec                     = 30
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path = var.docker_reverse_proxy_port.health_path
-        port         = var.docker_reverse_proxy_port.port
+      nomad = {
+        protocol                        = "HTTP"
+        port                            = 80
+        port_name                       = "nomad"
+        timeout_sec                     = 10
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path = "/v1/status/peers"
+          port         = var.nomad_port
+        }
+        groups = [{ group = var.server_instance_group }]
       }
-      groups = [
-        { group = var.api_instance_group },
-      ]
-    }
-    nomad = {
-      protocol                        = "HTTP"
-      port                            = 80
-      port_name                       = "nomad"
-      timeout_sec                     = 10
-      connection_draining_timeout_sec = 1
-      http_health_check = {
-        request_path = "/v1/status/peers"
-        port         = var.nomad_port
+    },
+    var.docker_reverse_proxy_enabled ? {
+      docker-reverse-proxy = {
+        protocol                        = "HTTP"
+        port                            = var.docker_reverse_proxy_port.port
+        port_name                       = var.docker_reverse_proxy_port.name
+        timeout_sec                     = 30
+        connection_draining_timeout_sec = 1
+        http_health_check = {
+          request_path = var.docker_reverse_proxy_port.health_path
+          port         = var.docker_reverse_proxy_port.port
+        }
+        groups = [{ group = var.api_instance_group }]
       }
-      groups = [{ group = var.server_instance_group }]
-    }
-  }
+    } : {},
+  )
   # The session backend serves wildcard sandbox traffic, including /ws.
   # Before routing session-paths to H2C, keep WebSocket upgrade paths on
   # the HTTP/1.1 backend or split them into a separate backend service.
@@ -261,9 +263,13 @@ resource "google_compute_url_map" "orch_map" {
     path_matcher = "api-paths"
   }
 
-  host_rule {
-    hosts        = concat(["docker.${var.domain_name}"], [for d in var.additional_domains : "docker.${d}"])
-    path_matcher = "docker-reverse-proxy-paths"
+  dynamic "host_rule" {
+    for_each = var.docker_reverse_proxy_enabled ? [true] : []
+
+    content {
+      hosts        = concat(["docker.${var.domain_name}"], [for d in var.additional_domains : "docker.${d}"])
+      path_matcher = "docker-reverse-proxy-paths"
+    }
   }
 
   host_rule {
@@ -300,9 +306,13 @@ resource "google_compute_url_map" "orch_map" {
     }
   }
 
-  path_matcher {
-    name            = "docker-reverse-proxy-paths"
-    default_service = google_compute_backend_service.default["docker-reverse-proxy"].self_link
+  dynamic "path_matcher" {
+    for_each = var.docker_reverse_proxy_enabled ? [true] : []
+
+    content {
+      name            = "docker-reverse-proxy-paths"
+      default_service = google_compute_backend_service.default["docker-reverse-proxy"].self_link
+    }
   }
 
   path_matcher {
@@ -370,7 +380,8 @@ resource "google_compute_backend_service" "h2c" {
   security_policy = google_compute_security_policy.default[each.key].self_link
 
   log_config {
-    enable = var.environment != "dev"
+    enable      = true
+    sample_rate = 1.0
   }
 
   dynamic "backend" {
@@ -403,7 +414,8 @@ resource "google_compute_backend_service" "default" {
   security_policy = google_compute_security_policy.default[each.key].self_link
 
   log_config {
-    enable = var.environment != "dev"
+    enable      = true
+    sample_rate = 1.0
   }
 
   dynamic "backend" {
@@ -530,7 +542,7 @@ resource "google_compute_firewall" "client_proxy_firewall_ingress" {
 }
 
 resource "google_compute_firewall" "internal_remote_connection_firewall_ingress" {
-  name    = "${var.prefix}${var.cluster_tag_name}-internal-remote-connection-firewall-ingress"
+  name    = var.private_nodes_enabled || var.environment != "dev" ? "${var.prefix}${var.cluster_tag_name}-iap-remote-connection-firewall-ingress" : "${var.prefix}${var.cluster_tag_name}-internal-remote-connection-firewall-ingress"
   network = var.network_name
 
   allow {
@@ -543,7 +555,11 @@ resource "google_compute_firewall" "internal_remote_connection_firewall_ingress"
   direction   = "INGRESS"
   target_tags = [var.cluster_tag_name]
   # https://googlecloudplatform.github.io/iap-desktop/setup-iap/
-  source_ranges = var.environment == "dev" ? ["0.0.0.0/0"] : ["35.235.240.0/20"]
+  source_ranges = var.private_nodes_enabled || var.environment != "dev" ? ["35.235.240.0/20"] : ["0.0.0.0/0"]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "google_compute_firewall" "remote_connection_firewall_ingress" {
@@ -556,12 +572,8 @@ resource "google_compute_firewall" "remote_connection_firewall_ingress" {
   }
 
 
-  #  Metadata fields can be found here: https://cloud.google.com/firewall/docs/firewall-rules-logging#log-format
-  dynamic "log_config" {
-    for_each = var.environment != "dev" ? [1] : []
-    content {
-      metadata = "EXCLUDE_ALL_METADATA"
-    }
+  log_config {
+    metadata = "EXCLUDE_ALL_METADATA"
   }
 
   priority = 1000
@@ -578,6 +590,10 @@ resource "google_compute_firewall" "orch_firewall_egress" {
 
   allow {
     protocol = "all"
+  }
+
+  log_config {
+    metadata = "EXCLUDE_ALL_METADATA"
   }
 
   direction   = "EGRESS"
@@ -645,7 +661,20 @@ resource "google_compute_security_policy_rule" "api-throttling-ip" {
   description = "Requests to API from IP address"
 }
 
+locals {
+  session_security_policy_source_expression = contains(var.session_security_policy_allowed_source_ranges, "*") ? "true" : join(
+    " || ",
+    [for cidr in var.session_security_policy_allowed_source_ranges : "inIpRange(origin.ip, '${cidr}')"],
+  )
+  session_security_policy_restricted = !contains(var.session_security_policy_allowed_source_ranges, "*")
+}
+
 resource "google_compute_security_policy_rule" "sandbox-throttling-host" {
+  count = var.session_security_policy_rules_managed_externally || local.session_security_policy_restricted ? 0 : 1
+
+  lifecycle {
+    prevent_destroy = true
+  }
   security_policy = google_compute_security_policy.default["session"].name
   description     = "WS envd connection requests per sandbox"
 
@@ -708,6 +737,11 @@ resource "google_compute_security_policy_rule" "sandbox-routing-headers-log" {
 }
 
 resource "google_compute_security_policy_rule" "sandbox-throttling-ip" {
+  count = var.session_security_policy_rules_managed_externally || local.session_security_policy_restricted ? 0 : 1
+
+  lifecycle {
+    prevent_destroy = true
+  }
   security_policy = google_compute_security_policy.default["session"].name
   action          = "throttle"
   priority        = "500"
@@ -735,6 +769,85 @@ resource "google_compute_security_policy_rule" "sandbox-throttling-ip" {
   }
 
   description = "Requests to sandboxes from IP address"
+}
+
+resource "google_compute_security_policy_rule" "sandbox-throttling-host-restricted" {
+  count = !var.session_security_policy_rules_managed_externally && local.session_security_policy_restricted ? 1 : 0
+
+  security_policy = google_compute_security_policy.default["session"].name
+  description     = "WS envd connection requests per sandbox from trusted provider egress ranges"
+
+  action   = "throttle"
+  priority = "300"
+  match {
+    expr {
+      expression = "request.path == \"/ws\" && (${local.session_security_policy_source_expression})"
+    }
+  }
+
+  rate_limit_options {
+    conform_action = "allow"
+    exceed_action  = "deny(429)"
+
+    enforce_on_key_configs {
+      enforce_on_key_name = "host"
+      enforce_on_key_type = "HTTP_HEADER"
+    }
+
+    rate_limit_threshold {
+      count        = 40
+      interval_sec = 30
+    }
+  }
+}
+
+resource "google_compute_security_policy_rule" "sandbox-throttling-ip-restricted" {
+  count = !var.session_security_policy_rules_managed_externally && local.session_security_policy_restricted ? 1 : 0
+
+  security_policy = google_compute_security_policy.default["session"].name
+  action          = "throttle"
+  priority        = "500"
+  match {
+    versioned_expr = "SRC_IPS_V1"
+    config {
+      src_ip_ranges = var.session_security_policy_allowed_source_ranges
+    }
+  }
+
+  rate_limit_options {
+    conform_action = "allow"
+    exceed_action  = "deny(429)"
+
+    enforce_on_key = ""
+
+    enforce_on_key_configs {
+      enforce_on_key_type = "IP"
+    }
+
+    rate_limit_threshold {
+      count        = 60000
+      interval_sec = 60
+    }
+  }
+
+  description = "Requests to sandboxes from trusted provider egress ranges"
+}
+
+resource "google_compute_security_policy_rule" "sandbox-deny-untrusted-sources" {
+  count = !var.session_security_policy_rules_managed_externally && local.session_security_policy_restricted ? 1 : 0
+
+  security_policy = google_compute_security_policy.default["session"].name
+  action          = "deny(403)"
+  priority        = "1000"
+
+  match {
+    versioned_expr = "SRC_IPS_V1"
+    config {
+      src_ip_ranges = ["*"]
+    }
+  }
+
+  description = "Deny direct sandbox requests from sources outside the trusted provider egress ranges"
 }
 
 # Cloud Router for NAT

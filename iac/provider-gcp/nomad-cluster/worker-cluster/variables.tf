@@ -69,6 +69,12 @@ variable "image_family" {
   type        = string
 }
 
+variable "image_name" {
+  description = "Immutable GCE image name for the instances when set"
+  type        = string
+  default     = ""
+}
+
 # GCP CONFIGURATION
 
 variable "gcp_region" {
@@ -84,6 +90,18 @@ variable "gcp_zone" {
 variable "network_name" {
   description = "Name of the VPC network for the cluster"
   type        = string
+}
+
+variable "subnetwork_name" {
+  description = "Regional subnet name for compute instances."
+  type        = string
+  default     = ""
+}
+
+variable "private_nodes_enabled" {
+  description = "Whether E2B compute nodes use private-only NICs."
+  type        = bool
+  default     = false
 }
 
 variable "cluster_tag_name" {

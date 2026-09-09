@@ -18,6 +18,11 @@ variable "server_image_family" {
   default = "e2b-orch"
 }
 
+variable "server_image_name" {
+  type    = string
+  default = ""
+}
+
 variable "server_cluster_name" {
   type    = string
   default = "orch-server"
@@ -34,6 +39,11 @@ variable "server_machine_type" {
 variable "api_image_family" {
   type    = string
   default = "e2b-orch"
+}
+
+variable "api_image_name" {
+  type    = string
+  default = ""
 }
 
 variable "api_cluster_size" {
@@ -57,6 +67,11 @@ variable "build_image_family" {
   default = "e2b-orch"
 }
 
+variable "build_image_name" {
+  type    = string
+  default = ""
+}
+
 variable "client_proxy_health_port" {
   type = object({
     name = string
@@ -71,6 +86,19 @@ variable "client_proxy_port" {
     port = number
   })
 }
+
+variable "session_security_policy_rules_managed_externally" {
+  description = "Whether the session Cloud Armor request throttle rules are managed outside the E2B Terraform stack."
+  type        = bool
+  default     = false
+}
+
+variable "session_security_policy_allowed_source_ranges" {
+  description = "Source CIDRs allowed to reach direct sandbox session hosts when this stack owns the policy rules."
+  type        = list(string)
+  default     = ["*"]
+}
+
 
 variable "api_port" {
   type = object({
@@ -95,6 +123,11 @@ variable "ingress_port" {
   })
 }
 
+variable "docker_reverse_proxy_enabled" {
+  type    = bool
+  default = true
+}
+
 variable "docker_reverse_proxy_port" {
   type = object({
     name        = string
@@ -108,6 +141,11 @@ variable "client_image_family" {
   default = "e2b-orch"
 }
 
+variable "client_image_name" {
+  type    = string
+  default = ""
+}
+
 variable "client_cluster_name" {
   type    = string
   default = "orch-client"
@@ -116,12 +154,8 @@ variable "client_cluster_name" {
 variable "client_clusters_config" {
   description = "Client cluster configurations"
   type = map(object({
-    cluster_size = number
-    autoscaler = optional(object({
-      size_max      = optional(number)
-      cpu_target    = optional(number)
-      memory_target = optional(number)
-    }))
+    cluster_size              = number
+    capacity_manager_max_size = number
     machine = object({
       type             = string
       min_cpu_platform = string
@@ -139,6 +173,11 @@ variable "client_clusters_config" {
     network_interface_type = optional(string)
     node_labels            = optional(list(string), [])
   }))
+
+  validation {
+    condition     = alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 10])
+    error_message = "Client capacity manager max size must remain locked at 10."
+  }
 }
 
 variable "build_cluster_name" {
@@ -178,6 +217,11 @@ variable "gcp_project_id" {
   type = string
 }
 
+variable "enable_gcp_telemetry_metrics" {
+  description = "Whether the Nomad service account may write metrics to Google Cloud Monitoring."
+  type        = bool
+}
+
 variable "gcp_region" {
   type = string
 }
@@ -188,6 +232,18 @@ variable "gcp_zone" {
 
 variable "network_name" {
   type = string
+}
+
+variable "subnetwork_name" {
+  type        = string
+  description = "Regional subnet name for compute instances. Empty preserves automatic subnet selection."
+  default     = ""
+}
+
+variable "database_runtime_service_account_email" {
+  type        = string
+  description = "Dedicated API instance identity permitted to consume the PostgreSQL DSN."
+  default     = ""
 }
 
 variable "google_service_account_email" {
@@ -335,6 +391,12 @@ variable "api_use_nat" {
   type        = bool
 }
 
+variable "private_nodes_enabled" {
+  description = "Whether E2B compute nodes use private-only NICs and IAP-only operator access."
+  type        = bool
+  default     = false
+}
+
 variable "api_nat_ips" {
   type        = list(string)
   description = "List of names for static IP addresses to use for NAT. If empty and api_use_nat is true, IPs will be created automatically."
@@ -357,6 +419,26 @@ variable "server_boot_disk_type" {
 
 variable "server_boot_disk_size_gb" {
   description = "The GCE boot disk size in GB for the control server machines."
+  type        = number
+}
+
+variable "server_stateful_data_disk_enabled" {
+  description = "Preserve singleton Nomad and Consul server state across managed instance recreation."
+  type        = bool
+}
+
+variable "server_stateful_data_disk_allow_fresh_bootstrap" {
+  description = "Authorize a new singleton ACL authority when no prior Nomad or Consul state can be migrated."
+  type        = bool
+}
+
+variable "server_stateful_data_disk_type" {
+  description = "The GCE disk type for persistent Nomad and Consul server state."
+  type        = string
+}
+
+variable "server_stateful_data_disk_size_gb" {
+  description = "The GCE disk size in GB for persistent Nomad and Consul server state."
   type        = number
 }
 

@@ -312,6 +312,7 @@ type ServiceInfoResponse struct {
 	MetricHugepagesUsed     uint64 `protobuf:"varint,115,opt,name=metric_hugepages_used,json=metricHugepagesUsed,proto3" json:"metric_hugepages_used,omitempty"`
 	MetricHugepagesReserved uint64 `protobuf:"varint,116,opt,name=metric_hugepages_reserved,json=metricHugepagesReserved,proto3" json:"metric_hugepages_reserved,omitempty"`
 	MetricHugepageSizeBytes uint64 `protobuf:"varint,117,opt,name=metric_hugepage_size_bytes,json=metricHugepageSizeBytes,proto3" json:"metric_hugepage_size_bytes,omitempty"`
+	MetricSandboxesStarting uint32 `protobuf:"varint,118,opt,name=metric_sandboxes_starting,json=metricSandboxesStarting,proto3" json:"metric_sandboxes_starting,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -531,6 +532,13 @@ func (x *ServiceInfoResponse) GetMetricHugepageSizeBytes() uint64 {
 	return 0
 }
 
+func (x *ServiceInfoResponse) GetMetricSandboxesStarting() uint32 {
+	if x != nil {
+		return x.MetricSandboxesStarting
+	}
+	return 0
+}
+
 type ServiceStatusChangeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ServiceStatus ServiceInfoStatus      `protobuf:"varint,2,opt,name=service_status,json=serviceStatus,proto3,enum=ServiceInfoStatus" json:"service_status,omitempty"`
@@ -575,6 +583,218 @@ func (x *ServiceStatusChangeRequest) GetServiceStatus() ServiceInfoStatus {
 	return ServiceInfoStatus_Healthy
 }
 
+type HostDrainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HostDrainRequest) Reset() {
+	*x = HostDrainRequest{}
+	mi := &file_info_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostDrainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostDrainRequest) ProtoMessage() {}
+
+func (x *HostDrainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_info_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostDrainRequest.ProtoReflect.Descriptor instead.
+func (*HostDrainRequest) Descriptor() ([]byte, []int) {
+	return file_info_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *HostDrainRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type HostReadyRequest struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	ExpectedDrainGeneration uint64                 `protobuf:"varint,1,opt,name=expected_drain_generation,json=expectedDrainGeneration,proto3" json:"expected_drain_generation,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *HostReadyRequest) Reset() {
+	*x = HostReadyRequest{}
+	mi := &file_info_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostReadyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostReadyRequest) ProtoMessage() {}
+
+func (x *HostReadyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_info_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostReadyRequest.ProtoReflect.Descriptor instead.
+func (*HostReadyRequest) Descriptor() ([]byte, []int) {
+	return file_info_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *HostReadyRequest) GetExpectedDrainGeneration() uint64 {
+	if x != nil {
+		return x.ExpectedDrainGeneration
+	}
+	return 0
+}
+
+type HostAdmissionSnapshot struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	NodeId                  string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	ServiceId               string                 `protobuf:"bytes,2,opt,name=service_id,json=serviceId,proto3" json:"service_id,omitempty"`
+	ServiceStatus           ServiceInfoStatus      `protobuf:"varint,3,opt,name=service_status,json=serviceStatus,proto3,enum=ServiceInfoStatus" json:"service_status,omitempty"`
+	DrainRequestId          string                 `protobuf:"bytes,4,opt,name=drain_request_id,json=drainRequestId,proto3" json:"drain_request_id,omitempty"`
+	DrainGeneration         uint64                 `protobuf:"varint,5,opt,name=drain_generation,json=drainGeneration,proto3" json:"drain_generation,omitempty"`
+	AdmissionClosed         bool                   `protobuf:"varint,6,opt,name=admission_closed,json=admissionClosed,proto3" json:"admission_closed,omitempty"`
+	MetricSandboxesRunning  uint32                 `protobuf:"varint,7,opt,name=metric_sandboxes_running,json=metricSandboxesRunning,proto3" json:"metric_sandboxes_running,omitempty"`
+	MetricSandboxesStarting uint32                 `protobuf:"varint,8,opt,name=metric_sandboxes_starting,json=metricSandboxesStarting,proto3" json:"metric_sandboxes_starting,omitempty"`
+	RecoveryComplete        bool                   `protobuf:"varint,9,opt,name=recovery_complete,json=recoveryComplete,proto3" json:"recovery_complete,omitempty"`
+	RecoveryEpoch           uint64                 `protobuf:"varint,10,opt,name=recovery_epoch,json=recoveryEpoch,proto3" json:"recovery_epoch,omitempty"`
+	Quiescent               bool                   `protobuf:"varint,11,opt,name=quiescent,proto3" json:"quiescent,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *HostAdmissionSnapshot) Reset() {
+	*x = HostAdmissionSnapshot{}
+	mi := &file_info_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HostAdmissionSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HostAdmissionSnapshot) ProtoMessage() {}
+
+func (x *HostAdmissionSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_info_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HostAdmissionSnapshot.ProtoReflect.Descriptor instead.
+func (*HostAdmissionSnapshot) Descriptor() ([]byte, []int) {
+	return file_info_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *HostAdmissionSnapshot) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *HostAdmissionSnapshot) GetServiceId() string {
+	if x != nil {
+		return x.ServiceId
+	}
+	return ""
+}
+
+func (x *HostAdmissionSnapshot) GetServiceStatus() ServiceInfoStatus {
+	if x != nil {
+		return x.ServiceStatus
+	}
+	return ServiceInfoStatus_Healthy
+}
+
+func (x *HostAdmissionSnapshot) GetDrainRequestId() string {
+	if x != nil {
+		return x.DrainRequestId
+	}
+	return ""
+}
+
+func (x *HostAdmissionSnapshot) GetDrainGeneration() uint64 {
+	if x != nil {
+		return x.DrainGeneration
+	}
+	return 0
+}
+
+func (x *HostAdmissionSnapshot) GetAdmissionClosed() bool {
+	if x != nil {
+		return x.AdmissionClosed
+	}
+	return false
+}
+
+func (x *HostAdmissionSnapshot) GetMetricSandboxesRunning() uint32 {
+	if x != nil {
+		return x.MetricSandboxesRunning
+	}
+	return 0
+}
+
+func (x *HostAdmissionSnapshot) GetMetricSandboxesStarting() uint32 {
+	if x != nil {
+		return x.MetricSandboxesStarting
+	}
+	return 0
+}
+
+func (x *HostAdmissionSnapshot) GetRecoveryComplete() bool {
+	if x != nil {
+		return x.RecoveryComplete
+	}
+	return false
+}
+
+func (x *HostAdmissionSnapshot) GetRecoveryEpoch() uint64 {
+	if x != nil {
+		return x.RecoveryEpoch
+	}
+	return 0
+}
+
+func (x *HostAdmissionSnapshot) GetQuiescent() bool {
+	if x != nil {
+		return x.Quiescent
+	}
+	return false
+}
+
 var File_info_proto protoreflect.FileDescriptor
 
 const file_info_proto_rawDesc = "" +
@@ -596,8 +816,7 @@ const file_info_proto_rawDesc = "" +
 	"cpu_family\x18\x02 \x01(\tR\tcpuFamily\x12\x1b\n" +
 	"\tcpu_model\x18\x03 \x01(\tR\bcpuModel\x12$\n" +
 	"\x0ecpu_model_name\x18\x04 \x01(\tR\fcpuModelName\x12\x1b\n" +
-	"\tcpu_flags\x18\x05 \x03(\tR\bcpuFlags\"\xd1\n" +
-	"\n" +
+	"\tcpu_flags\x18\x05 \x03(\tR\bcpuFlags\"\x8d\v\n" +
 	"\x13ServiceInfoResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -625,9 +844,29 @@ const file_info_proto_rawDesc = "" +
 	"\x16metric_hugepages_total\x18r \x01(\x04R\x14metricHugepagesTotal\x122\n" +
 	"\x15metric_hugepages_used\x18s \x01(\x04R\x13metricHugepagesUsed\x12:\n" +
 	"\x19metric_hugepages_reserved\x18t \x01(\x04R\x17metricHugepagesReserved\x12;\n" +
-	"\x1ametric_hugepage_size_bytes\x18u \x01(\x04R\x17metricHugepageSizeBytes\"W\n" +
+	"\x1ametric_hugepage_size_bytes\x18u \x01(\x04R\x17metricHugepageSizeBytes\x12:\n" +
+	"\x19metric_sandboxes_starting\x18v \x01(\rR\x17metricSandboxesStarting\"W\n" +
 	"\x1aServiceStatusChangeRequest\x129\n" +
-	"\x0eservice_status\x18\x02 \x01(\x0e2\x12.ServiceInfoStatusR\rserviceStatus*J\n" +
+	"\x0eservice_status\x18\x02 \x01(\x0e2\x12.ServiceInfoStatusR\rserviceStatus\"1\n" +
+	"\x10HostDrainRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"N\n" +
+	"\x10HostReadyRequest\x12:\n" +
+	"\x19expected_drain_generation\x18\x01 \x01(\x04R\x17expectedDrainGeneration\"\xf2\x03\n" +
+	"\x15HostAdmissionSnapshot\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
+	"\n" +
+	"service_id\x18\x02 \x01(\tR\tserviceId\x129\n" +
+	"\x0eservice_status\x18\x03 \x01(\x0e2\x12.ServiceInfoStatusR\rserviceStatus\x12(\n" +
+	"\x10drain_request_id\x18\x04 \x01(\tR\x0edrainRequestId\x12)\n" +
+	"\x10drain_generation\x18\x05 \x01(\x04R\x0fdrainGeneration\x12)\n" +
+	"\x10admission_closed\x18\x06 \x01(\bR\x0fadmissionClosed\x128\n" +
+	"\x18metric_sandboxes_running\x18\a \x01(\rR\x16metricSandboxesRunning\x12:\n" +
+	"\x19metric_sandboxes_starting\x18\b \x01(\rR\x17metricSandboxesStarting\x12+\n" +
+	"\x11recovery_complete\x18\t \x01(\bR\x10recoveryComplete\x12%\n" +
+	"\x0erecovery_epoch\x18\n" +
+	" \x01(\x04R\rrecoveryEpoch\x12\x1c\n" +
+	"\tquiescent\x18\v \x01(\bR\tquiescent*J\n" +
 	"\x11ServiceInfoStatus\x12\v\n" +
 	"\aHealthy\x10\x00\x12\f\n" +
 	"\bDraining\x10\x01\x12\r\n" +
@@ -635,10 +874,13 @@ const file_info_proto_rawDesc = "" +
 	"\aStandby\x10\x03*8\n" +
 	"\x0fServiceInfoRole\x12\x13\n" +
 	"\x0fTemplateBuilder\x10\x00\x12\x10\n" +
-	"\fOrchestrator\x10\x012\x98\x01\n" +
+	"\fOrchestrator\x10\x012\xc9\x02\n" +
 	"\vInfoService\x12;\n" +
 	"\vServiceInfo\x12\x16.google.protobuf.Empty\x1a\x14.ServiceInfoResponse\x12L\n" +
-	"\x15ServiceStatusOverride\x12\x1b.ServiceStatusChangeRequest\x1a\x16.google.protobuf.EmptyB/Z-https://github.com/e2b-dev/infra/orchestratorb\x06proto3"
+	"\x15ServiceStatusOverride\x12\x1b.ServiceStatusChangeRequest\x1a\x16.google.protobuf.Empty\x12?\n" +
+	"\rHostAdmission\x12\x16.google.protobuf.Empty\x1a\x16.HostAdmissionSnapshot\x126\n" +
+	"\tHostDrain\x12\x11.HostDrainRequest\x1a\x16.HostAdmissionSnapshot\x126\n" +
+	"\tHostReady\x12\x11.HostReadyRequest\x1a\x16.HostAdmissionSnapshotB/Z-https://github.com/e2b-dev/infra/orchestratorb\x06proto3"
 
 var (
 	file_info_proto_rawDescOnce sync.Once
@@ -653,7 +895,7 @@ func file_info_proto_rawDescGZIP() []byte {
 }
 
 var file_info_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_info_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_info_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_info_proto_goTypes = []any{
 	(ServiceInfoStatus)(0),             // 0: ServiceInfoStatus
 	(ServiceInfoRole)(0),               // 1: ServiceInfoRole
@@ -661,26 +903,36 @@ var file_info_proto_goTypes = []any{
 	(*MachineInfo)(nil),                // 3: MachineInfo
 	(*ServiceInfoResponse)(nil),        // 4: ServiceInfoResponse
 	(*ServiceStatusChangeRequest)(nil), // 5: ServiceStatusChangeRequest
-	(*timestamppb.Timestamp)(nil),      // 6: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),              // 7: google.protobuf.Empty
+	(*HostDrainRequest)(nil),           // 6: HostDrainRequest
+	(*HostReadyRequest)(nil),           // 7: HostReadyRequest
+	(*HostAdmissionSnapshot)(nil),      // 8: HostAdmissionSnapshot
+	(*timestamppb.Timestamp)(nil),      // 9: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),              // 10: google.protobuf.Empty
 }
 var file_info_proto_depIdxs = []int32{
-	0, // 0: ServiceInfoResponse.service_status:type_name -> ServiceInfoStatus
-	1, // 1: ServiceInfoResponse.service_roles:type_name -> ServiceInfoRole
-	6, // 2: ServiceInfoResponse.service_startup:type_name -> google.protobuf.Timestamp
-	3, // 3: ServiceInfoResponse.machine_info:type_name -> MachineInfo
-	6, // 4: ServiceInfoResponse.service_status_changed_at:type_name -> google.protobuf.Timestamp
-	2, // 5: ServiceInfoResponse.metric_disks:type_name -> DiskMetrics
-	0, // 6: ServiceStatusChangeRequest.service_status:type_name -> ServiceInfoStatus
-	7, // 7: InfoService.ServiceInfo:input_type -> google.protobuf.Empty
-	5, // 8: InfoService.ServiceStatusOverride:input_type -> ServiceStatusChangeRequest
-	4, // 9: InfoService.ServiceInfo:output_type -> ServiceInfoResponse
-	7, // 10: InfoService.ServiceStatusOverride:output_type -> google.protobuf.Empty
-	9, // [9:11] is the sub-list for method output_type
-	7, // [7:9] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	0,  // 0: ServiceInfoResponse.service_status:type_name -> ServiceInfoStatus
+	1,  // 1: ServiceInfoResponse.service_roles:type_name -> ServiceInfoRole
+	9,  // 2: ServiceInfoResponse.service_startup:type_name -> google.protobuf.Timestamp
+	3,  // 3: ServiceInfoResponse.machine_info:type_name -> MachineInfo
+	9,  // 4: ServiceInfoResponse.service_status_changed_at:type_name -> google.protobuf.Timestamp
+	2,  // 5: ServiceInfoResponse.metric_disks:type_name -> DiskMetrics
+	0,  // 6: ServiceStatusChangeRequest.service_status:type_name -> ServiceInfoStatus
+	0,  // 7: HostAdmissionSnapshot.service_status:type_name -> ServiceInfoStatus
+	10, // 8: InfoService.ServiceInfo:input_type -> google.protobuf.Empty
+	5,  // 9: InfoService.ServiceStatusOverride:input_type -> ServiceStatusChangeRequest
+	10, // 10: InfoService.HostAdmission:input_type -> google.protobuf.Empty
+	6,  // 11: InfoService.HostDrain:input_type -> HostDrainRequest
+	7,  // 12: InfoService.HostReady:input_type -> HostReadyRequest
+	4,  // 13: InfoService.ServiceInfo:output_type -> ServiceInfoResponse
+	10, // 14: InfoService.ServiceStatusOverride:output_type -> google.protobuf.Empty
+	8,  // 15: InfoService.HostAdmission:output_type -> HostAdmissionSnapshot
+	8,  // 16: InfoService.HostDrain:output_type -> HostAdmissionSnapshot
+	8,  // 17: InfoService.HostReady:output_type -> HostAdmissionSnapshot
+	13, // [13:18] is the sub-list for method output_type
+	8,  // [8:13] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_info_proto_init() }
@@ -694,7 +946,7 @@ func file_info_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_info_proto_rawDesc), len(file_info_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   4,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

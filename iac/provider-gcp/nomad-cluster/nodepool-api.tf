@@ -78,7 +78,7 @@ resource "google_compute_instance_group_manager" "api_pool" {
   # Server is a stateful cluster, so the update strategy used to roll out a new GCE Instance Template must be
   # a rolling update.
   update_policy {
-    type                    = var.environment == "dev" ? "PROACTIVE" : "OPPORTUNISTIC"
+    type                    = var.private_nodes_enabled || var.environment != "dev" ? "OPPORTUNISTIC" : "PROACTIVE"
     minimal_action          = "REPLACE"
     max_surge_fixed         = 1
     max_surge_percent       = null
@@ -97,7 +97,8 @@ resource "google_compute_instance_group_manager" "api_pool" {
 }
 
 data "google_compute_image" "api_source_image" {
-  family = var.api_image_family
+  name   = var.api_image_name != "" ? var.api_image_name : null
+  family = var.api_image_name == "" ? var.api_image_family : null
 }
 
 resource "google_compute_instance_template" "api" {
@@ -112,7 +113,7 @@ resource "google_compute_instance_template" "api" {
       goog-ops-agent-policy = "v2-x86-template-1-2-0-${var.gcp_zone}"
     } : {})
   )
-  tags                    = [var.cluster_tag_name]
+  tags                    = [var.cluster_tag_name, "${var.cluster_tag_name}-api"]
   metadata_startup_script = local.api_startup_script
   metadata = merge(
     { api_cluster = "TRUE" },
@@ -128,23 +129,24 @@ resource "google_compute_instance_template" "api" {
 
   disk {
     boot         = true
-    source_image = data.google_compute_image.api_source_image.id
+    source_image = can(regex("^[0-9]+$", var.api_image_name)) ? "projects/${var.gcp_project_id}/global/images/${data.google_compute_image.api_source_image.image_id}" : data.google_compute_image.api_source_image.id
     disk_size_gb = 200
     disk_type    = var.api_boot_disk_type
   }
 
   network_interface {
-    network = var.network_name
+    network    = var.network_name
+    subnetwork = var.subnetwork_name != "" ? var.subnetwork_name : null
 
     dynamic "access_config" {
-      for_each = var.api_use_nat ? [] : ["public_ip"]
+      for_each = var.private_nodes_enabled || var.api_use_nat ? [] : ["public_ip"]
       content {}
     }
   }
 
   # For a full list of oAuth 2.0 Scopes, see https://developers.google.com/identity/protocols/googlescopes
   service_account {
-    email = var.google_service_account_email
+    email = var.database_runtime_service_account_email != "" ? var.database_runtime_service_account_email : var.google_service_account_email
     scopes = [
       "userinfo-email",
       "compute-ro",

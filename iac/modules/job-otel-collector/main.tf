@@ -19,6 +19,8 @@ locals {
       enable_gcp_telemetry_metrics          = var.enable_gcp_telemetry_metrics
       enable_gcp_telemetry_external_metrics = var.enable_gcp_telemetry_external_metrics
       gcp_telemetry_project_id              = var.gcp_telemetry_project_id
+      scaffold_clickstack_otlp_endpoint     = var.scaffold_clickstack_otlp_endpoint
+      scaffold_clickstack_otlp_token        = var.scaffold_clickstack_otlp_token
     },
   )
 
@@ -154,4 +156,17 @@ variable "gcp_telemetry_project_id" {
   type        = string
   default     = ""
   description = "Google Cloud project ID used for native Cloud Monitoring metric export. Required when enable_gcp_telemetry_metrics is true."
+}
+
+variable "scaffold_clickstack_otlp_endpoint" {
+  type        = string
+  default     = ""
+  description = "Authenticated OTLP/HTTP endpoint used for direct Scaffold OOM telemetry export."
+}
+
+variable "scaffold_clickstack_otlp_token" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Ingestion token for direct Scaffold OOM telemetry export."
 }
