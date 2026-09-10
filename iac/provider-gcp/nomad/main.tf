@@ -472,6 +472,13 @@ resource "google_secret_manager_secret" "clickhouse_password" {
 }
 
 resource "google_secret_manager_secret_version" "clickhouse_password_value" {
+  # Stage this policy on the existing version before changing its payload.
+  deletion_policy = "DISABLE"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
   secret = google_secret_manager_secret.clickhouse_password.id
 
   secret_data = var.clickhouse_password
