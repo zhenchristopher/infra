@@ -39,13 +39,14 @@ resource "terraform_data" "canary_isolation" {
       condition = !var.same_project_canary_enabled || (
         var.environment == "dev" &&
         var.private_nodes_enabled &&
-        var.api_use_nat &&
+        !var.api_use_nat &&
         var.gcp_project_id == "ashler-platform" &&
         var.gcp_region == "us-east1" &&
         var.gcp_zone == "us-east1-b" &&
-        var.network_name == "cny-e2b-canary" &&
-        var.subnetwork_name == "cny-e2b-canary-us-east1" &&
-        var.cluster_tag_name == "orch" &&
+        var.network_name == "default" &&
+        var.subnetwork_name == "default" &&
+        var.cluster_tag_name == "cny-orch" &&
+        var.allow_sandbox_internal_cidrs == "10.142.0.1/32,10.142.15.253/32" &&
         var.prefix == "cny-" &&
         var.bucket_prefix == "ashler-platform-e2b-canary-" &&
         var.domain_name == "e2b-canary.ashler.com" &&

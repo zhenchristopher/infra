@@ -16,6 +16,9 @@ provider "cloudflare" {
 }
 
 locals {
+  # Discovery tags may already carry the environment prefix; resource names must not duplicate it.
+  cluster_name = "${var.prefix}${trimprefix(var.cluster_tag_name, var.prefix)}"
+
   domain_map = { for d in var.additional_domains : replace(d, ".", "-") => d }
 
   // All domains (primary + additional)
@@ -524,7 +527,7 @@ resource "google_compute_firewall" "default-hc" {
 }
 
 resource "google_compute_firewall" "client_proxy_firewall_ingress" {
-  name    = "${var.prefix}${var.cluster_tag_name}-client-proxy-firewall-ingress"
+  name    = "${local.cluster_name}-client-proxy-firewall-ingress"
   network = var.network_name
 
   allow {
@@ -542,7 +545,7 @@ resource "google_compute_firewall" "client_proxy_firewall_ingress" {
 }
 
 resource "google_compute_firewall" "internal_remote_connection_firewall_ingress" {
-  name    = var.private_nodes_enabled || var.environment != "dev" ? "${var.prefix}${var.cluster_tag_name}-iap-remote-connection-firewall-ingress" : "${var.prefix}${var.cluster_tag_name}-internal-remote-connection-firewall-ingress"
+  name    = var.private_nodes_enabled || var.environment != "dev" ? "${local.cluster_name}-iap-remote-connection-firewall-ingress" : "${local.cluster_name}-internal-remote-connection-firewall-ingress"
   network = var.network_name
 
   allow {
@@ -563,7 +566,7 @@ resource "google_compute_firewall" "internal_remote_connection_firewall_ingress"
 }
 
 resource "google_compute_firewall" "remote_connection_firewall_ingress" {
-  name    = "${var.prefix}${var.cluster_tag_name}-remote-connection-firewall-ingress"
+  name    = "${local.cluster_name}-remote-connection-firewall-ingress"
   network = var.network_name
 
   deny {
@@ -585,7 +588,7 @@ resource "google_compute_firewall" "remote_connection_firewall_ingress" {
 
 
 resource "google_compute_firewall" "orch_firewall_egress" {
-  name    = "${var.prefix}${var.cluster_tag_name}-firewall-egress"
+  name    = "${local.cluster_name}-firewall-egress"
   network = var.network_name
 
   allow {
