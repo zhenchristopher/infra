@@ -78,6 +78,7 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
       minimal_action               = "REPLACE"
       instance_redistribution_type = "NONE"
       replacement_method           = "RECREATE"
+      max_surge_fixed              = 0
       max_unavailable_fixed        = 1
       min_ready_sec                = 120
     }
