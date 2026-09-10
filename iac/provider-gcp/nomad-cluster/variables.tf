@@ -173,11 +173,6 @@ variable "client_clusters_config" {
     network_interface_type = optional(string)
     node_labels            = optional(list(string), [])
   }))
-
-  validation {
-    condition     = alltrue([for config in values(var.client_clusters_config) : config.capacity_manager_max_size == 10])
-    error_message = "Client capacity manager max size must remain locked at 10."
-  }
 }
 
 variable "build_cluster_name" {
