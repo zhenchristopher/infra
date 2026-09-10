@@ -79,7 +79,7 @@ resource "google_compute_region_instance_group_manager" "server_pool" {
       instance_redistribution_type = "NONE"
       replacement_method           = "RECREATE"
       max_surge_fixed              = 0
-      max_unavailable_fixed        = 1
+      max_unavailable_fixed        = length(data.google_compute_zones.region_zones.names)
       min_ready_sec                = 120
     }
   }
