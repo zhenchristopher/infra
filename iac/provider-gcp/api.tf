@@ -22,6 +22,14 @@ resource "google_storage_bucket_iam_member" "database_runtime_setup_reader" {
   member = "serviceAccount:${var.database_runtime_service_account_email}"
 }
 
+resource "google_storage_bucket_iam_member" "database_runtime_loki_storage" {
+  count = var.database_runtime_service_account_email != "" ? 1 : 0
+
+  bucket = module.init.loki_bucket_name
+  role   = "roles/storage.objectUser"
+  member = "serviceAccount:${var.database_runtime_service_account_email}"
+}
+
 resource "google_project_iam_member" "database_runtime_logging_writer" {
   count = var.database_runtime_service_account_email != "" ? 1 : 0
 

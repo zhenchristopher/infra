@@ -170,7 +170,6 @@ function generate_consul_config {
   shift 20
   local -ar recursors=("$@")
 
-  local instance_id=""
   local instance_name=""
   local project_id=""
   local instance_ip_address=""
@@ -277,7 +276,7 @@ EOF
   $bootstrap_expect
   "client_addr": "0.0.0.0",
   "datacenter": "$datacenter",
-  "node_name": "$instance_id",
+  "node_name": "$instance_name",
   "leave_on_terminate": true,
   "skip_leave_on_interrupt": true,
   $recursors_config
