@@ -151,6 +151,87 @@ func TestAdmissionRestartReconstructsRunningReservationBeforeCompletingRecovery(
 	assert.Equal(t, orchestratorinfo.ServiceInfoStatus_Healthy, restartedInfo.GetStatus().Status)
 }
 
+func TestAdmissionCleanStartupReclaimClearsStaleReservations(t *testing.T) {
+	t.Parallel()
+
+	controller, info, statePath := newTestAdmission(t)
+	running := &sandbox.Sandbox{
+		Metadata: &sandbox.Metadata{
+			Runtime: sandbox.RuntimeMetadata{SandboxID: "running"},
+		},
+	}
+	reserved, err := controller.BeginCreate(t.Context(), running.Runtime.SandboxID)
+	require.NoError(t, err)
+	require.True(t, reserved)
+	controller.OnInsert(t.Context(), running)
+	require.NoError(t, controller.EndCreate(t.Context(), running.Runtime.SandboxID))
+	reserved, err = controller.BeginCreate(t.Context(), "starting")
+	require.NoError(t, err)
+	require.True(t, reserved)
+
+	restartedInfo := &ServiceInfo{ClientId: info.ClientId, ServiceId: info.ServiceId}
+	restartedInfo.SetStatus(t.Context(), orchestratorinfo.ServiceInfoStatus_Healthy)
+	restarted, err := NewAdmissionController(t.Context(), restartedInfo, sandbox.NewSandboxesMap(), AdmissionConfig{
+		StatePath: statePath,
+		Enabled:   func(context.Context) bool { return true },
+		Ceiling:   func(context.Context) int { return 8 },
+	})
+	require.NoError(t, err)
+	beforeReclaim := restarted.Snapshot()
+	assert.False(t, beforeReclaim.RecoveryComplete)
+	assert.True(t, beforeReclaim.AdmissionClosed)
+	assert.Equal(t, uint32(1), beforeReclaim.RunningCount)
+	assert.Equal(t, uint32(1), beforeReclaim.StartingCount)
+
+	require.NoError(t, restarted.CompleteRecoveryAfterCleanReclaim(t.Context()))
+	afterReclaim := restarted.Snapshot()
+	assert.True(t, afterReclaim.RecoveryComplete)
+	assert.False(t, afterReclaim.AdmissionClosed)
+	assert.Zero(t, afterReclaim.RunningCount)
+	assert.Zero(t, afterReclaim.StartingCount)
+	assert.Equal(t, orchestratorinfo.ServiceInfoStatus_Healthy, restartedInfo.GetStatus().Status)
+
+	reloadedInfo := &ServiceInfo{ClientId: info.ClientId, ServiceId: info.ServiceId}
+	reloadedInfo.SetStatus(t.Context(), orchestratorinfo.ServiceInfoStatus_Healthy)
+	reloaded, err := NewAdmissionController(t.Context(), reloadedInfo, sandbox.NewSandboxesMap(), AdmissionConfig{
+		StatePath: statePath,
+		Enabled:   func(context.Context) bool { return true },
+		Ceiling:   func(context.Context) int { return 8 },
+	})
+	require.NoError(t, err)
+	assert.True(t, reloaded.Snapshot().RecoveryComplete)
+	assert.False(t, reloaded.Snapshot().AdmissionClosed)
+}
+
+func TestAdmissionCleanStartupReclaimPreservesManagedDrain(t *testing.T) {
+	t.Parallel()
+
+	controller, info, statePath := newTestAdmission(t)
+	reserved, err := controller.BeginCreate(t.Context(), "starting")
+	require.NoError(t, err)
+	require.True(t, reserved)
+	draining, err := controller.Drain(t.Context(), "drain-1")
+	require.NoError(t, err)
+
+	restartedInfo := &ServiceInfo{ClientId: info.ClientId, ServiceId: info.ServiceId}
+	restartedInfo.SetStatus(t.Context(), orchestratorinfo.ServiceInfoStatus_Healthy)
+	restarted, err := NewAdmissionController(t.Context(), restartedInfo, sandbox.NewSandboxesMap(), AdmissionConfig{
+		StatePath: statePath,
+		Enabled:   func(context.Context) bool { return true },
+		Ceiling:   func(context.Context) int { return 8 },
+	})
+	require.NoError(t, err)
+	require.NoError(t, restarted.CompleteRecoveryAfterCleanReclaim(t.Context()))
+
+	recovered := restarted.Snapshot()
+	assert.True(t, recovered.RecoveryComplete)
+	assert.True(t, recovered.AdmissionClosed)
+	assert.True(t, recovered.Quiescent)
+	assert.Equal(t, "drain-1", recovered.DrainRequestID)
+	assert.Equal(t, draining.DrainGeneration, recovered.DrainGeneration)
+	assert.Equal(t, orchestratorinfo.ServiceInfoStatus_Draining, restartedInfo.GetStatus().Status)
+}
+
 func TestAdmissionChangedServiceInstanceFailsClosed(t *testing.T) {
 	t.Parallel()
 

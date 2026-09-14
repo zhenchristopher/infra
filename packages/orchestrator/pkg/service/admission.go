@@ -328,6 +328,40 @@ func (c *AdmissionController) StartingCount() uint32 {
 	return uint32(len(c.state.StartingReservations))
 }
 
+// CompleteRecoveryAfterCleanReclaim clears reservations whose runtime resources
+// were authoritatively removed by a successful startup reclaim. Failed or
+// disabled reclaim must not call this method.
+func (c *AdmissionController) CompleteRecoveryAfterCleanReclaim(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.state.RecoveryComplete {
+		return nil
+	}
+	if c.sandboxes.Count() != 0 {
+		return errors.New("cannot complete host admission recovery while sandboxes remain")
+	}
+
+	next := cloneAdmissionState(c.state)
+	next.RecoveryPendingReservations = nil
+	next.RunningReservations = nil
+	next.StartingReservations = nil
+	c.finishRecovery(&next)
+	if err := c.persistState(next); err != nil {
+		c.failClosedLocked(ctx, err)
+
+		return fmt.Errorf("persist clean-reclaim host admission recovery: %w", err)
+	}
+	c.state = next
+	c.applyRecoveredStatus(ctx)
+
+	return nil
+}
+
 func (c *AdmissionController) enabled(ctx context.Context) bool {
 	return c != nil && c.config.Enabled != nil && c.config.Enabled(ctx)
 }

@@ -769,6 +769,12 @@ func run(config cfg.Config, opts Options) (success bool) {
 		reclaimClean = !summary.HasFailures()
 	}
 
+	if reclaimClean {
+		if err := admission.CompleteRecoveryAfterCleanReclaim(ctx); err != nil {
+			logger.L().Fatal(ctx, "failed to complete host admission recovery after startup reclaim", zap.Error(err))
+		}
+	}
+
 	// device pool
 	devicePool, err := nbd.NewDevicePool(config.NBDPoolSize)
 	if err != nil {
