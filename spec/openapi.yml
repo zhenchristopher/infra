@@ -4005,7 +4005,8 @@ paths:
       description: Read authoritative host-local admission state
       tags: [admin]
       security:
-        - AdminTokenAuth: []
+        - AdminApiKeyAuth: []
+        - AdminJWTAuth: []
       parameters:
         - $ref: "#/components/parameters/nodeID"
         - in: query
@@ -4036,7 +4037,8 @@ paths:
       description: Idempotently close host admission and allocate a drain generation
       tags: [admin]
       security:
-        - AdminTokenAuth: []
+        - AdminApiKeyAuth: []
+        - AdminJWTAuth: []
       parameters:
         - $ref: "#/components/parameters/nodeID"
       requestBody:
@@ -4068,7 +4070,8 @@ paths:
       description: Re-open host admission for the exact expected drain generation
       tags: [admin]
       security:
-        - AdminTokenAuth: []
+        - AdminApiKeyAuth: []
+        - AdminJWTAuth: []
       parameters:
         - $ref: "#/components/parameters/nodeID"
       requestBody:

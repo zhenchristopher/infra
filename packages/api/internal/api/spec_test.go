@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -222,4 +223,82 @@ func TestAdminTeamAuthSchemeOrder(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rr.Code, "request with admin JWT and team header should pass auth (body: %s)", rr.Body.String())
 	require.Equal(t, []string{"AdminJWTAuth", "AdminTeamAuth"}, adminSchemeOrder)
+}
+
+func TestHostAdmissionRoutesAcceptAdminAPIKey(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := GetSpec()
+	require.NoError(t, err)
+	swagger.Servers = nil
+
+	const (
+		adminToken = "admin-token"
+		clusterID  = "00000000-0000-0000-0000-000000000000"
+		nodeID     = "node-a"
+	)
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name:   "admission",
+			method: http.MethodGet,
+			path:   "/nodes/" + nodeID + "/admission?clusterID=" + clusterID,
+		},
+		{
+			name:   "drain",
+			method: http.MethodPost,
+			path:   "/nodes/" + nodeID + "/drain",
+			body:   `{"clusterID":"` + clusterID + `","requestID":"00000000-0000-0000-0000-000000000001"}`,
+		},
+		{
+			name:   "ready",
+			method: http.MethodPost,
+			path:   "/nodes/" + nodeID + "/ready",
+			body:   `{"clusterID":"` + clusterID + `","expectedDrainGeneration":1}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var authenticated bool
+			authFn := func(_ context.Context, input *openapi3filter.AuthenticationInput) error {
+				if input.SecuritySchemeName != "AdminApiKeyAuth" {
+					return http.ErrNoCookie
+				}
+				if input.RequestValidationInput.Request.Header.Get(auth.HeaderAdminToken) != adminToken {
+					return http.ErrNoCookie
+				}
+				authenticated = true
+				return nil
+			}
+
+			r := gin.New()
+			r.Use(middleware.OapiRequestValidatorWithOptions(swagger, &middleware.Options{
+				Options: openapi3filter.Options{
+					AuthenticationFunc: authFn,
+					MultiError:         true,
+				},
+				SilenceServersWarning: true,
+			}))
+			r.Any("/*any", func(c *gin.Context) {
+				c.Status(http.StatusOK)
+			})
+
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set(auth.HeaderAdminToken, adminToken)
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rr := httptest.NewRecorder()
+			r.ServeHTTP(rr, req)
+
+			require.Equal(t, http.StatusOK, rr.Code, "admin API key should authorize %s (body: %s)", tt.path, rr.Body.String())
+			require.True(t, authenticated)
+		})
+	}
 }
