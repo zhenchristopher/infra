@@ -428,7 +428,7 @@ var (
 	BestOfKAlpha                  = NewIntFlag("best-of-k-alpha", 50)           // Default Alpha=0.5 (stored as percentage for int flag, current usage weight)
 	HybridPlacementThreshold      = NewIntFlag("hybrid-placement-threshold", 4)
 	HybridPlacementCeiling        = NewIntFlag("hybrid-placement-ceiling", 4)
-	EnvdInitTimeoutMilliseconds   = NewIntFlag("envd-init-request-timeout-milliseconds", 50)         // Timeout for envd init request in milliseconds
+	EnvdInitTimeoutMilliseconds   = NewIntFlag("envd-init-request-timeout-milliseconds", 50)         // Maximum timestamp age of an accepted init response; setup uses the restore budget.
 	EnvdTimeoutMilliseconds       = NewIntFlag("envd-timeout-milliseconds", envdTimeoutFallbackMs()) // Timeout for waiting for envd on resume; falls back to ENVD_TIMEOUT env var (default 10s)
 	// GuestSyncTimeoutMs overrides the mandatory pre-pause guest-sync deadline
 	// for filesystem-only snapshots, in milliseconds. 0 (default) derives the

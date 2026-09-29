@@ -3580,13 +3580,12 @@ func (s *Sandbox) awaitSnapshotAdmission(ctx context.Context, grace time.Duratio
 // a live envd, and a failure only leaves the clock lagging until the next
 // resume. WithoutCancel so a dying request ctx can't skip it.
 //
-// The episode budget is the envd-timeout flag (~10s) — the same bound a real
-// resume gives WaitForEnvd — NOT EnvdInitRequestTimeout: that 50ms value is
-// the PER-ATTEMPT deadline inside initEnvd's retry loop, calibrated for
-// fail-fast-and-retry, and using it as the total would allow exactly one
-// attempt against a guest that is busy working through its post-freeze
-// backlog. Callers run this on a goroutine: a sick envd must cost the
-// checkpoint nothing, and a missed sync only lasts until the next /init.
+// The episode budget is the envd-timeout flag — the same bound a real resume
+// gives WaitForEnvd — NOT EnvdInitRequestTimeout. That shorter value bounds the
+// timestamp age of an accepted /init response, not cold guest setup. A slow
+// successful setup is followed by a fresh timestamp pass within this same
+// episode. Callers run this on a goroutine: a sick envd must cost the checkpoint
+// nothing, and a missed sync only lasts until the next /init.
 func (s *Sandbox) bestEffortEnvdReinit(ctx context.Context) {
 	budget := time.Duration(s.featureFlags.IntFlag(ctx, featureflags.EnvdTimeoutMilliseconds)) * time.Millisecond
 	initCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))

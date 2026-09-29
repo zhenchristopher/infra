@@ -127,12 +127,16 @@ func classifyEnvdTransportError(err error) (class, phase string) {
 // doRequestWithInfiniteRetries does a request with infinite retries until the context is done.
 // The parent context must be bounded — by a deadline/timeout, or by a cancel
 // the caller races against sandbox liveness (WaitForEnvd, bestEffortEnvdReinit).
+// The per-attempt setting bounds timestamp age, not guest initialization work:
+// canceling a cold /init at that threshold can restart its MMDS/setup work forever.
 func (s *Sandbox) doRequestWithInfiniteRetries(
 	ctx context.Context,
 	method,
 	address string,
 ) (*http.Response, int64, error) {
 	requestCount := int64(0)
+	client := sandboxHttpClient
+	client.Timeout = 0 // The caller's restore/liveness context is the request budget.
 
 	jsonBody := &envd.PostInitJSONBody{
 		LifecycleID:    s.LifecycleID,
@@ -146,7 +150,8 @@ func (s *Sandbox) doRequestWithInfiniteRetries(
 	}
 
 	for {
-		jsonBody.Timestamp = time.Now()
+		attemptStartedAt := time.Now()
+		jsonBody.Timestamp = attemptStartedAt
 
 		body, err := json.Marshal(jsonBody)
 		if err != nil {
@@ -154,11 +159,8 @@ func (s *Sandbox) doRequestWithInfiniteRetries(
 		}
 
 		requestCount++
-		reqCtx, cancel := context.WithTimeout(ctx, s.internalConfig.EnvdInitRequestTimeout)
-		request, err := http.NewRequestWithContext(reqCtx, method, address, bytes.NewReader(body))
+		request, err := http.NewRequestWithContext(ctx, method, address, bytes.NewReader(body))
 		if err != nil {
-			cancel()
-
 			return nil, requestCount, err
 		}
 
@@ -168,11 +170,15 @@ func (s *Sandbox) doRequestWithInfiniteRetries(
 			request.Header.Set("X-Access-Token", *s.Config.Envd.AccessToken)
 		}
 
-		response, err := sandboxHttpClient.Do(request)
-		cancel()
+		response, err := client.Do(request)
 
 		if err == nil {
-			return response, requestCount, nil
+			if response.StatusCode != http.StatusNoContent || time.Since(attemptStartedAt) <= s.internalConfig.EnvdInitRequestTimeout {
+				return response, requestCount, nil
+			}
+			// Let cold setup complete, then send a fresh timestamp before accepting
+			// readiness. Do not retry HTTP rejections or retain a stale response.
+			response.Body.Close()
 		}
 
 		select {
