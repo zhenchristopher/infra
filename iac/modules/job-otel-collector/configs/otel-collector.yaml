@@ -200,6 +200,12 @@ receivers:
       #       enabled: false
 
 processors:
+  # Leave 25% of the configured Nomad allocation for runtime/native overhead.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: ${floor(memory_mb * 0.75)}
+    spike_limit_mib: ${floor(memory_mb * 0.1875)}
+
   batch:
     timeout: 5s
 
@@ -207,7 +213,14 @@ processors:
     timeout: 5s
     send_batch_size: 50000
 
-%{ if scaffold_clickstack_otlp_endpoint != "" }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+  # The dedicated delta pipeline below owns oom_kill; never export it twice.
+  filter/scaffold_non_oom_kills:
+    error_mode: ignore
+    metrics:
+      datapoint:
+        - 'metric.name == "orchestrator.sandbox.cgroup.memory.events" and attributes["event"] == "oom_kill"'
+
   filter/scaffold_oom_kills:
     error_mode: ignore
     metrics:
@@ -533,28 +546,56 @@ processors:
         action: delete
 
 extensions:
+%{ if trimspace(grafana_otlp_url) != "" }
   basicauth/grafana_cloud:
     # https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/extension/basicauthextension
     client_auth:
-      username: "${grafana_username}"
-      password: "${grafana_otel_collector_token}"
+      username: ${jsonencode(grafana_username)}
+      password: ${jsonencode(grafana_otel_collector_token)}
+%{ endif }
 
   health_check:
     endpoint: 0.0.0.0:13133
 exporters:
-  debug:
-    verbosity: detailed
-    use_internal_logger: false
+%{ if trimspace(grafana_otlp_url) != "" }
   otlp_http/grafana_cloud:
     # https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlpexporter
-    endpoint: "${grafana_otlp_url}/otlp"
+    endpoint: ${jsonencode("${trimsuffix(trimspace(grafana_otlp_url), "/")}/otlp")}
     auth:
       authenticator: basicauth/grafana_cloud
-%{ if scaffold_clickstack_otlp_endpoint != "" }
+    timeout: 5s
+    retry_on_failure:
+      max_elapsed_time: 30s
+    sending_queue:
+      sizer: bytes
+      queue_size: 8388608
+      num_consumers: 2
+      block_on_overflow: false
+      batch:
+        sizer: bytes
+        min_size: 262144
+        max_size: 1048576
+        flush_timeout: 1s
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
   otlp_http/scaffold_clickstack:
-    endpoint: "${scaffold_clickstack_otlp_endpoint}"
+    endpoint: ${jsonencode(trimsuffix(trimspace(scaffold_clickstack_otlp_endpoint), "/"))}
     headers:
-      authorization: "${scaffold_clickstack_otlp_token}"
+      authorization: ${jsonencode(scaffold_clickstack_otlp_token)}
+    timeout: 5s
+    retry_on_failure:
+      max_elapsed_time: 30s
+    # At most 8 MiB queued per signal; split requests at 1 MiB, two senders.
+    sending_queue:
+      sizer: bytes
+      queue_size: 8388608
+      num_consumers: 2
+      block_on_overflow: false
+      batch:
+        sizer: bytes
+        min_size: 262144
+        max_size: 1048576
+        flush_timeout: 1s
 %{ endif }
 %{ if provider_name == "gcp" && enable_gcp_telemetry_metrics }
   googlemanagedprometheus/gcp_telemetry:
@@ -591,70 +632,103 @@ service:
                 insecure: true
                 endpoint: localhost:4317
   extensions:
+%{ if trimspace(grafana_otlp_url) != "" }
     - basicauth/grafana_cloud
+%{ endif }
     - health_check
   pipelines:
+%{ if trimspace(grafana_otlp_url) != "" }
     metrics:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/otlp
         - resourcedetection
         - transform/set-name
-        - batch
       exporters:
         - otlp_http/grafana_cloud
-%{ if scaffold_clickstack_otlp_endpoint != "" }
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+    metrics/scaffold:
+      receivers:
+        - otlp
+      processors:
+        - memory_limiter
+        - filter/otlp
+        - filter/scaffold_non_oom_kills
+        - resourcedetection
+        - transform/set-name
+      exporters:
+        - otlp_http/scaffold_clickstack
     metrics/scaffold_oom_kills:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/scaffold_oom_kills
         - cumulativetodelta/scaffold_oom_kills
         - resourcedetection
         - transform/set-name
-        - batch
       exporters:
         - otlp_http/scaffold_clickstack
 %{ endif }
+%{ if trimspace(grafana_otlp_url) != "" || trimspace(scaffold_clickstack_otlp_endpoint) != "" }
     metrics/prometheus:
       receivers:
         - prometheus
       processors:
+        - memory_limiter
         - filter/only_client_allocs
         - resourcedetection
         - transform/set-name
-        - batch
       exporters:
+%{ if trimspace(grafana_otlp_url) != "" }
         - otlp_http/grafana_cloud
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+        - otlp_http/scaffold_clickstack
+%{ endif }
     metrics/rpc_only:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/rpc_duration_only
         - resource/remove_instance
         - resourcedetection
         - transform/set-name
-        - batch
       exporters:
+%{ if trimspace(grafana_otlp_url) != "" }
         - otlp_http/grafana_cloud
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+        - otlp_http/scaffold_clickstack
+%{ endif }
     metrics/host:
       receivers:
         - hostmetrics
       processors:
+        - memory_limiter
         - resourcedetection
         - transform/set-name
         - metricstransform/single_cpu
         - transform/aggregate_nvme
         - metricstransform/aggregate_disks
-        - batch
       exporters:
+%{ if trimspace(grafana_otlp_url) != "" }
         - otlp_http/grafana_cloud
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+        - otlp_http/scaffold_clickstack
+%{ endif }
+%{ endif }
 %{ if provider_name == "gcp" && enable_gcp_telemetry_metrics }
     metrics/gcp_telemetry:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/otlp
         - resourcedetection/gcp_telemetry
         - transform/gcp_telemetry_labels
@@ -666,6 +740,7 @@ service:
       receivers:
         - prometheus
       processors:
+        - memory_limiter
         - filter/only_client_allocs
         - resourcedetection/gcp_telemetry
         - transform/gcp_prometheus_target_resource
@@ -679,6 +754,7 @@ service:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/rpc_duration_only
         - resourcedetection/gcp_telemetry
         - transform/gcp_telemetry_labels
@@ -690,6 +766,7 @@ service:
       receivers:
         - hostmetrics
       processors:
+        - memory_limiter
         - resourcedetection/gcp_telemetry
         - transform/gcp_hostmetrics_target_resource
         - transform/gcp_telemetry_labels
@@ -705,6 +782,7 @@ service:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/external_metrics
         - resourcedetection/gcp_telemetry
         - transform/gcp_telemetry_labels
@@ -719,6 +797,7 @@ service:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/external_metrics
         - batch/clickhouse
       exporters:
@@ -728,26 +807,39 @@ service:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - filter/external_metrics
         - batch
       exporters:
         - otlp_grpc/otel_router
 %{ endif }
+%{ if trimspace(grafana_otlp_url) != "" || trimspace(scaffold_clickstack_otlp_endpoint) != "" }
     traces:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - resourcedetection
         - resource/set_attributes
-        - batch
       exporters:
+%{ if trimspace(grafana_otlp_url) != "" }
         - otlp_http/grafana_cloud
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+        - otlp_http/scaffold_clickstack
+%{ endif }
     logs:
       receivers:
         - otlp
       processors:
+        - memory_limiter
         - resourcedetection
         - resource/set_attributes
-        - batch
       exporters:
+%{ if trimspace(grafana_otlp_url) != "" }
         - otlp_http/grafana_cloud
+%{ endif }
+%{ if trimspace(scaffold_clickstack_otlp_endpoint) != "" }
+        - otlp_http/scaffold_clickstack
+%{ endif }
+%{ endif }

@@ -119,6 +119,9 @@ func placeSandbox(
 		if attempt == 0 && refusals > 0 {
 			return failed(NoNodesAvailableError{})
 		}
+		if lastCreateErr != nil {
+			return failed(SandboxCreateError{Attempts: attempt, LastErr: lastCreateErr})
+		}
 
 		return failed(PlacementTimeoutError{Attempts: attempt})
 	}
@@ -222,7 +225,6 @@ func placeSandbox(
 		}
 	}
 
-	// A deadline hitting mid-create is a timeout, not a node failure.
 	if ctx.Err() != nil {
 		return deadline()
 	}

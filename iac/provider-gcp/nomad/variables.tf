@@ -391,7 +391,7 @@ variable "enable_gcp_telemetry_external_metrics" {
 variable "scaffold_clickstack_otlp_endpoint" {
   type        = string
   default     = ""
-  description = "Authenticated OTLP/HTTP endpoint used for direct Scaffold OOM telemetry export."
+  description = "Authenticated OTLP/HTTP endpoint for Scaffold operational metrics, traces, logs and OOM deltas."
 }
 
 variable "clickhouse_server_port" {

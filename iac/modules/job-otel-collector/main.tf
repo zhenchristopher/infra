@@ -2,9 +2,10 @@ locals {
   default_otel_collector_config = templatefile(
     "${path.module}/configs/otel-collector.yaml", {
       provider_name                = var.provider_name
+      memory_mb                    = var.memory_mb
       grafana_otel_collector_token = var.grafana_otel_collector_token
-      grafana_otlp_url             = var.grafana_otlp_url
-      grafana_username             = var.grafana_username
+      grafana_otlp_url             = trimsuffix(trimspace(var.grafana_otlp_url), "/")
+      grafana_username             = trimspace(var.grafana_username)
       consul_token                 = var.consul_token
 
       clickhouse_username = var.clickhouse_username
@@ -19,7 +20,7 @@ locals {
       enable_gcp_telemetry_metrics          = var.enable_gcp_telemetry_metrics
       enable_gcp_telemetry_external_metrics = var.enable_gcp_telemetry_external_metrics
       gcp_telemetry_project_id              = var.gcp_telemetry_project_id
-      scaffold_clickstack_otlp_endpoint     = var.scaffold_clickstack_otlp_endpoint
+      scaffold_clickstack_otlp_endpoint     = trimsuffix(trimspace(var.scaffold_clickstack_otlp_endpoint), "/")
       scaffold_clickstack_otlp_token        = var.scaffold_clickstack_otlp_token
     },
   )
@@ -46,6 +47,23 @@ resource "nomad_job" "otel_collector" {
     precondition {
       condition     = !var.enable_gcp_telemetry_external_metrics || var.enable_gcp_telemetry_metrics
       error_message = "enable_gcp_telemetry_metrics must be true when enable_gcp_telemetry_external_metrics is true."
+    }
+
+    precondition {
+      condition = var.otel_collector_config_override != "" || trimspace(var.grafana_otlp_url) == "" || (
+        can(regex("^https?://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?(/[^[:space:]?#]*)?$", trimspace(var.grafana_otlp_url))) &&
+        trimspace(var.grafana_username) != "" && trimspace(var.grafana_otel_collector_token) != ""
+      )
+      error_message = "Grafana requires an HTTP(S) base URL without userinfo, query, fragment or whitespace, and nonblank username and token; leave the URL blank to disable it."
+    }
+
+    precondition {
+      condition = var.otel_collector_config_override != "" || trimspace(var.scaffold_clickstack_otlp_endpoint) == "" || (
+        can(regex("^https?://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:]+\\])(:[0-9]{1,5})?(/[^[:space:]?#]*)?$", trimspace(var.scaffold_clickstack_otlp_endpoint))) &&
+        trimspace(var.scaffold_clickstack_otlp_token) != "" &&
+        length(regexall("[\\r\\n]", var.scaffold_clickstack_otlp_token)) == 0
+      )
+      error_message = "ClickStack requires an HTTP(S) base URL without userinfo, query, fragment or whitespace, and a nonblank single-line ingestion token; leave the URL blank to disable it."
     }
   }
 }
@@ -77,17 +95,17 @@ variable "otel_collector_grpc_port" {
 variable "grafana_otel_collector_token" {
   type        = string
   sensitive   = true
-  description = "Grafana Cloud OTel collector token. Required for default config, pass dummy value if using otel_collector_config_override."
+  description = "Grafana Cloud OTel collector token. Required when the Grafana URL is nonblank and the default config is used."
 }
 
 variable "grafana_otlp_url" {
   type        = string
-  description = "Grafana Cloud OTLP URL. Required for default config, pass dummy value if using otel_collector_config_override."
+  description = "Grafana Cloud HTTP(S) base URL; /otlp is appended. Blank disables Grafana in the default config."
 }
 
 variable "grafana_username" {
   type        = string
-  description = "Grafana Cloud username. Required for default config, pass dummy value if using otel_collector_config_override."
+  description = "Grafana Cloud username. Required when the Grafana URL is nonblank and the default config is used."
 }
 
 variable "consul_token" {
@@ -161,12 +179,12 @@ variable "gcp_telemetry_project_id" {
 variable "scaffold_clickstack_otlp_endpoint" {
   type        = string
   default     = ""
-  description = "Authenticated OTLP/HTTP endpoint used for direct Scaffold OOM telemetry export."
+  description = "Authenticated OTLP/HTTP base endpoint for Scaffold operational metrics, traces and logs. Blank disables export."
 }
 
 variable "scaffold_clickstack_otlp_token" {
   type        = string
   default     = ""
   sensitive   = true
-  description = "Ingestion token for direct Scaffold OOM telemetry export."
+  description = "Authorization header value for Scaffold ClickStack telemetry ingestion."
 }

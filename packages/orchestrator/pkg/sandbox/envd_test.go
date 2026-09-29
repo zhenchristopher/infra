@@ -7,8 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"syscall"
 	"testing"
 	"time"
 
@@ -144,4 +148,66 @@ func TestEnvdInitEmptyCaBundle(t *testing.T) { //nolint:paralleltest
 	defer resp.Body.Close()
 
 	assert.Empty(t, captured.CaBundle, "caBundle should be omitted when empty")
+}
+
+type envdTransportFunc func(*http.Request) (*http.Response, error)
+
+func (f envdTransportFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+// The transport cancels the retry episode itself, so no server, deadline race,
+// or wall-clock sleep is needed to exercise the terminal failure path.
+func TestEnvdInitTransportFailure(t *testing.T) { //nolint:paralleltest // overrides sandboxHttpClient
+	const secret = "private-envd-credential"
+	orig := sandboxHttpClient
+	t.Cleanup(func() { sandboxHttpClient = orig })
+
+	tests := []struct {
+		name  string
+		err   error
+		op    string
+		cause error
+		class string
+		phase string
+		exit  envdInitExitType
+	}{
+		{"refused", syscall.ECONNREFUSED, "dial", ErrWaitForEnvdTimeout, "refused", "dial", envdInitExitTimeout},
+		{"reset", syscall.ECONNRESET, "read", ErrFcProcessExited, "reset", "read", envdInitExitOther},
+		{"broken_pipe", syscall.EPIPE, "write", context.Canceled, "reset", "write", envdInitExitCanceled},
+		{"eof", io.EOF, "read", context.Canceled, "eof", "read", envdInitExitCanceled},
+		{"unexpected_eof", io.ErrUnexpectedEOF, "read", context.Canceled, "eof", "read", envdInitExitCanceled},
+		{"timeout", context.DeadlineExceeded, "dial", context.DeadlineExceeded, "timeout", "dial", envdInitExitTimeout},
+		{"network_timeout", syscall.ETIMEDOUT, "dial", context.Canceled, "timeout", "dial", envdInitExitCanceled},
+		{"canceled", context.Canceled, "read", context.Canceled, "canceled", "read", envdInitExitCanceled},
+		{"unreachable", syscall.ENETUNREACH, "dial", context.Canceled, "unreachable", "dial", envdInitExitCanceled},
+		{"host_unreachable", syscall.EHOSTUNREACH, "dial", context.Canceled, "unreachable", "dial", envdInitExitCanceled},
+		{"unknown", errors.New(secret), secret, errors.New(secret), "other", "unknown", envdInitExitCanceled},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(nil)
+			sandboxHttpClient = http.Client{Transport: envdTransportFunc(func(*http.Request) (*http.Response, error) {
+				cancel(tt.cause)
+
+				return nil, &net.OpError{Op: tt.op, Net: secret, Err: fmt.Errorf("%s: %w", secret, tt.err)}
+			})}
+
+			resp, _, err := newTestSandboxWithBundle(secret).doRequestWithInfiniteRetries(
+				ctx, http.MethodPost, "http://user:"+secret+"@envd.invalid/init?token="+secret,
+			)
+			require.Error(t, err)
+			assert.Nil(t, resp)
+			assert.ErrorIs(t, err, context.Canceled)
+			assert.ErrorIs(t, err, tt.cause)
+			assert.Equal(t, tt.exit, classifyEnvdInitExit(err))
+			assert.Contains(t, err.Error(), "transport_class="+tt.class)
+			assert.Contains(t, err.Error(), "transport_phase="+tt.phase)
+			assert.NotContains(t, err.Error(), secret)
+			assert.NotContains(t, err.Error(), "envd.invalid")
+			var urlErr *url.Error
+			assert.False(t, errors.As(err, &urlErr), "raw transport URL must not be retained")
+		})
+	}
 }

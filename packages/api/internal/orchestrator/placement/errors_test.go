@@ -29,7 +29,7 @@ func TestPlaceSandbox_TimeoutReturnsTypedError(t *testing.T) {
 	assert.Equal(t, 0, timeoutErr.Attempts)
 }
 
-func TestPlaceSandbox_DeadlineDuringFinalAttemptReturnsTimeout(t *testing.T) {
+func TestPlaceSandbox_DeadlineDuringFinalAttemptReturnsLastCreateError(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -54,9 +54,10 @@ func TestPlaceSandbox_DeadlineDuringFinalAttemptReturnsTimeout(t *testing.T) {
 
 	result, err := PlaceSandbox(ctx, algorithm, nodes, nil, testSbxRequest("test-sandbox"), CPURequirement{}, false, nil)
 
-	var timeoutErr PlacementTimeoutError
-	require.ErrorAs(t, err, &timeoutErr)
-	assert.Equal(t, 3, timeoutErr.Attempts)
+	var createErr SandboxCreateError
+	require.ErrorAs(t, err, &createErr)
+	assert.Equal(t, 3, createErr.Attempts)
+	assert.Equal(t, codes.DeadlineExceeded, status.Code(createErr.LastErr))
 	assert.True(t, result.TimedOut)
 }
 
@@ -85,7 +86,7 @@ func TestPlaceSandbox_CapacitySpikeToDeadlineClassifiedAsCapacity(t *testing.T) 
 	assert.True(t, result.TimedOut)
 }
 
-func TestPlaceSandbox_HardFailureThenRefusalsToDeadlineStaysTimeout(t *testing.T) {
+func TestPlaceSandbox_HardFailureThenRefusalsToDeadlineKeepsLastCreateError(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -101,9 +102,10 @@ func TestPlaceSandbox_HardFailureThenRefusalsToDeadlineStaysTimeout(t *testing.T
 
 	_, err := PlaceSandbox(ctx, algorithm, []*nodemanager.Node{hard, exhausted}, hard, testSbxRequest("test-sandbox"), CPURequirement{}, false, nil)
 
-	var timeoutErr PlacementTimeoutError
-	require.ErrorAs(t, err, &timeoutErr)
-	assert.Equal(t, 1, timeoutErr.Attempts)
+	var createErr SandboxCreateError
+	require.ErrorAs(t, err, &createErr)
+	assert.Equal(t, 1, createErr.Attempts)
+	assert.Equal(t, codes.Internal, status.Code(createErr.LastErr))
 }
 
 func TestPlaceSandbox_AllExcludedForwardsLastCreateError(t *testing.T) {

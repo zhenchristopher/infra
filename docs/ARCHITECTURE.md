@@ -192,6 +192,9 @@ Key mechanisms (all under `pkg/sandbox/`):
   OTel. Sandbox and template-build log writes go through a flag-resolved HTTP route: the legacy
   collector remains the fallback primary destination, and configured shadow destinations can mirror
   writes during collector/storage migrations without changing sandbox behavior.
+- Failed envd readiness emits one bounded transport-class/phase summary with attempts,
+  elapsed readiness time and cumulative demand/source-page counters. Cancellation
+  identity is preserved; raw transport messages, URLs and credentials are not logged.
 
 ### Envd (`packages/envd`)
 
@@ -544,6 +547,11 @@ flowchart TB
   ClickHouse with `logs-read-config` after `sandbox_logs` is populated (`LOGS_READ_CONFIG` is the
   flag's fallback where LaunchDarkly has no value). Once reads are on ClickHouse, Loki can be left
   out of a deployment and the api started without `LOKI_URL`.
+- Self-hosted deployments may explicitly route existing operational metrics, traces
+  and logs to an authenticated Scaffold ClickStack OTLP/HTTP endpoint. Blank Grafana
+  URLs disable that sink; configured sinks require nonblank credentials. OOM deltas
+  remain a separate, nonduplicated stream. HTTP export queues are byte-bounded and
+  collector admission uses a memory limiter; native GCP metric export stays opt-in.
 
 ## Repository layout
 

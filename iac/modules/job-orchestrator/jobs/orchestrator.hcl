@@ -61,8 +61,10 @@ job "orchestrator-${latest_orchestrator_job_id}" {
       }
 
       resources {
+        # Nomad 1.6 rejects -1; omitting memory_max hard-caps the task at 1 GiB.
+        # ponytail: 84 GiB clients; derive per-pool limits if client sizes diverge.
         memory     = 1024
-        memory_max = -1
+        memory_max = 86016
       }
 
       env {

@@ -3952,7 +3952,7 @@ func (s *Sandbox) WaitForEnvd(
 	firstStart := s.startupRecorded.CompareAndSwap(false, true)
 
 	defer func() {
-		if !firstStart {
+		if !firstStart && e == nil {
 			return
 		}
 
@@ -3962,8 +3962,35 @@ func (s *Sandbox) WaitForEnvd(
 		// distinguishable in them, so it records none of these. It is otherwise
 		// kept out of Prometheus (registration-skip); the harvest's own metrics
 		// cover its timing/size.
-		if !s.skipStartupMetrics {
+		if (firstStart && !s.skipStartupMetrics) || e != nil {
 			duration := time.Since(start).Milliseconds()
+			stats := s.memory.ServeStats()
+			if e != nil {
+				class, phase := "not_transport", "unknown"
+				var attempts int64
+				var transportErr *envdInitTransportError
+				if errors.As(e, &transportErr) {
+					class, phase = transportErr.transportClass, transportErr.transportPhase
+					attempts = transportErr.attempts
+				}
+				s.log().Error(ctx, "failed to init envd after retries",
+					logger.WithEnvdVersion(s.Config.Envd.Version),
+					zap.String("start_type", string(startType)),
+					zap.String("exit_type", string(classifyEnvdInitExit(e))),
+					zap.String("transport_class", class),
+					zap.String("transport_phase", phase),
+					zap.Int64("attempts", attempts),
+					zap.Int64("timeout_ms", s.internalConfig.EnvdInitRequestTimeout.Milliseconds()),
+					zap.Int64("startup_elapsed_ms", duration),
+					zap.Bool("first_start", firstStart),
+					zap.Int64("startup_pages", stats.Pages),
+					zap.Int64("startup_source_pages", stats.SourcePages),
+					zap.Int64("startup_bytes", stats.Bytes),
+				)
+			}
+			if !firstStart || s.skipStartupMetrics {
+				return
+			}
 			// success is kept for backward compatibility until consumers move to exit_type.
 			waitForEnvdDurationHistogram.Record(ctx, duration, metric.WithAttributes(
 				telemetry.WithEnvdVersion(s.Config.Envd.Version),
@@ -3977,7 +4004,6 @@ func (s *Sandbox) WaitForEnvd(
 			// ServeStats() is cumulative since resume, so at this instant it equals
 			// the startup counts. Recorded for both outcomes (success label) so
 			// slow/failed starts can be correlated with page volume.
-			stats := s.memory.ServeStats()
 			startupAttrs := metric.WithAttributes(
 				attribute.String("start_type", string(startType)),
 				attribute.Bool("success", e == nil),

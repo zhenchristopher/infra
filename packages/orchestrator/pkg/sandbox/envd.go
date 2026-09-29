@@ -72,6 +72,58 @@ const (
 	envdOpFsthaw   envdOp = "fsthaw"
 )
 
+// envdInitTransportError keeps cancellation identity, but never retains the
+// transport error: its URL, addresses and message may contain credentials.
+type envdInitTransportError struct {
+	cause          error
+	transportClass string
+	transportPhase string
+	attempts       int64
+}
+
+func (e *envdInitTransportError) Error() string {
+	return fmt.Sprintf("envd init stopped (exit_type=%s, transport_class=%s, transport_phase=%s, attempts=%d)",
+		classifyEnvdInitExit(e), e.transportClass, e.transportPhase, e.attempts)
+}
+
+func (e *envdInitTransportError) Unwrap() error { return e.cause }
+
+// Only typed errors and allowlisted operation names contribute to diagnostics.
+func classifyEnvdTransportError(err error) (class, phase string) {
+	phase = "unknown"
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		switch opErr.Op {
+		case "dial":
+			phase = "dial"
+		case "read":
+			phase = "read"
+		case "write":
+			phase = "write"
+		}
+	}
+
+	var netErr net.Error
+	switch {
+	case errors.Is(err, context.Canceled):
+		class = "canceled"
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, syscall.ETIMEDOUT), errors.As(err, &netErr) && netErr.Timeout():
+		class = "timeout"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		class = "refused"
+	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE):
+		class = "reset"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		class = "eof"
+	case errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH):
+		class = "unreachable"
+	default:
+		class = "other"
+	}
+
+	return class, phase
+}
+
 // doRequestWithInfiniteRetries does a request with infinite retries until the context is done.
 // The parent context must be bounded — by a deadline/timeout, or by a cancel
 // the caller races against sandbox liveness (WaitForEnvd, bestEffortEnvdReinit).
@@ -125,7 +177,14 @@ func (s *Sandbox) doRequestWithInfiniteRetries(
 
 		select {
 		case <-ctx.Done():
-			return nil, requestCount, fmt.Errorf("%w with cause: %w", ctx.Err(), context.Cause(ctx))
+			class, phase := classifyEnvdTransportError(err)
+
+			return nil, requestCount, &envdInitTransportError{
+				cause:          errors.Join(ctx.Err(), context.Cause(ctx)),
+				transportClass: class,
+				transportPhase: phase,
+				attempts:       requestCount,
+			}
 		case <-time.After(loopDelay):
 		}
 	}
@@ -508,13 +567,6 @@ func (s *Sandbox) initEnvd(ctx context.Context, startType StartType, recordMetri
 
 	response, count, err := s.doRequestWithInfiniteRetries(ctx, http.MethodPost, address)
 	if err != nil {
-		s.log().Error(ctx, "failed to init envd after retries",
-			logger.WithEnvdVersion(s.Config.Envd.Version),
-			zap.Int64("timeout_ms", s.internalConfig.EnvdInitRequestTimeout.Milliseconds()),
-			zap.Int64("attempts", count),
-			zap.Error(err),
-		)
-
 		exit := classifyEnvdInitExit(err)
 		// Count only on the first WaitForEnvd (the real start); a later re-check
 		// on the same handler (post-upgrade readiness, template-build swap) must
