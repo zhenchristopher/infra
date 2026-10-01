@@ -20,10 +20,12 @@ import (
 	"github.com/e2b-dev/infra/packages/orchestrator/pkg/template/build/layer"
 	"github.com/e2b-dev/infra/packages/orchestrator/pkg/template/build/metrics"
 	"github.com/e2b-dev/infra/packages/orchestrator/pkg/template/build/phases"
+	"github.com/e2b-dev/infra/packages/orchestrator/pkg/template/build/sandboxtools"
 	"github.com/e2b-dev/infra/packages/orchestrator/pkg/template/build/storage/cache"
 	"github.com/e2b-dev/infra/packages/orchestrator/pkg/template/metadata"
 	"github.com/e2b-dev/infra/packages/shared/pkg/logger"
 	"github.com/e2b-dev/infra/packages/shared/pkg/storage"
+	"github.com/e2b-dev/infra/packages/shared/pkg/storage/header"
 )
 
 var prefetchTimeout = 5 * time.Minute
@@ -126,6 +128,12 @@ func (pb *OptimizeBuilder) Build(
 
 	pb.logger.Info(ctx, "Collecting prefetch mapping from template resume")
 
+	// Finalize uploads asynchronously. Wait before reading immutable frame
+	// tables or publishing metadata that its upload would otherwise overwrite.
+	if err := pb.UploadErrGroup.Wait(); err != nil {
+		return phases.LayerResult{}, fmt.Errorf("wait for template upload: %w", err)
+	}
+
 	// Get the template from the finalize phase
 	// isSnapshot=false, isBuilding=true since we're in a build phase
 	localTemplate, err := pb.templateCache.GetTemplate(ctx, sourceLayer.Metadata.Template.BuildID, false, true)
@@ -134,7 +142,7 @@ func (pb *OptimizeBuilder) Build(
 	}
 
 	// Resume the sandbox from the finalize snapshot
-	memoryPrefetchMapping, err := pb.collectMemoryPrefetchMapping(ctx, localTemplate)
+	prefetchMapping, err := pb.collectPrefetchMapping(ctx, localTemplate)
 	if err != nil {
 		// Log but don't fail the build - prefetch is an optimization
 		pb.logger.Warn(ctx, "failed to collect prefetch mapping, continuing without prefetch",
@@ -149,9 +157,7 @@ func (pb *OptimizeBuilder) Build(
 	}
 
 	// Update metadata with prefetch mapping
-	updatedMetadata := sourceLayer.Metadata.WithPrefetch(&metadata.Prefetch{
-		Memory: memoryPrefetchMapping,
-	})
+	updatedMetadata := sourceLayer.Metadata.WithPrefetch(prefetchMapping)
 
 	// Upload the updated metadata
 	err = pb.updateMetadata(ctx, updatedMetadata)
@@ -167,10 +173,7 @@ func (pb *OptimizeBuilder) Build(
 		}, nil
 	}
 
-	blockCount := 0
-	if memoryPrefetchMapping != nil {
-		blockCount = memoryPrefetchMapping.Count()
-	}
+	blockCount := prefetchMapping.Memory.Count()
 
 	pb.logger.Info(ctx, "Collected prefetch mapping with memory blocks", zap.Int("block_count", blockCount))
 
@@ -181,12 +184,29 @@ func (pb *OptimizeBuilder) Build(
 	}, nil
 }
 
-func (pb *OptimizeBuilder) collectMemoryPrefetchMapping(
+func (pb *OptimizeBuilder) collectPrefetchMapping(
 	ctx context.Context,
 	localTemplate sbxtemplate.Template,
-) (*metadata.MemoryPrefetchMapping, error) {
+) (*metadata.Prefetch, error) {
 	ctx, span := tracer.Start(ctx, "collect prefetch-mapping")
 	defer span.End()
+
+	rootfs, err := localTemplate.Rootfs()
+	if err != nil {
+		return nil, err
+	}
+	// The live cache can still carry the pre-upload header, without self frame
+	// data. Capture against the finalized header rather than guessing geometry.
+	paths := storage.Paths{BuildID: localTemplate.Files().BuildID}
+	h, _, err := header.LoadHeader(ctx, pb.templateStorage, paths.RootfsHeader())
+	if err != nil {
+		return nil, err
+	}
+	if h.Metadata.BuildId.String() != paths.BuildID {
+		return nil, fmt.Errorf("rootfs capture build identity mismatch")
+	}
+	recorder := block.NewRootfsRecorder(rootfs, h)
+	localTemplate = &rootfsRecordingTemplate{Template: localTemplate, recorder: recorder}
 
 	// Configure sandbox for prefetch collection
 	sbxConfig := sandbox.NewConfig(sandbox.Config{
@@ -221,10 +241,9 @@ func (pb *OptimizeBuilder) collectMemoryPrefetchMapping(
 	// Compute intersection with average order across all runs
 	commonEntries := computeCommonPrefetchEntries(allPrefetchData)
 
-	if len(commonEntries) == 0 {
-		pb.logger.Debug(ctx, "no common blocks found for prefetch mapping")
-
-		return nil, nil
+	rootfsMapping, err := recorder.Mapping()
+	if err != nil {
+		pb.logger.Warn(ctx, "rootfs working set not captured; retaining memory prefetch", zap.Error(err))
 	}
 
 	span.SetAttributes(
@@ -233,7 +252,7 @@ func (pb *OptimizeBuilder) collectMemoryPrefetchMapping(
 		attribute.Int64("block_size", allPrefetchData[0].BlockSize),
 	)
 
-	return metadata.PrefetchEntriesToMapping(commonEntries, allPrefetchData[0].BlockSize), nil
+	return &metadata.Prefetch{Memory: metadata.PrefetchEntriesToMapping(commonEntries, allPrefetchData[0].BlockSize), Rootfs: rootfsMapping}, nil
 }
 
 // runSandboxAndCollectPrefetch runs a sandbox and collects the prefetch data.
@@ -242,11 +261,30 @@ func (pb *OptimizeBuilder) runSandboxAndCollectPrefetch(
 	sandboxCreator *layer.ResumeSandbox,
 	localTemplate sbxtemplate.Template,
 ) (block.PrefetchData, error) {
+	ctx, cancel := context.WithTimeout(ctx, prefetchTimeout)
+	defer cancel()
 	sbx, err := sandboxCreator.Sandbox(ctx, pb.layerExecutor, localTemplate)
 	if err != nil {
 		return block.PrefetchData{}, fmt.Errorf("failed to resume sandbox: %w", err)
 	}
-	defer sbx.Close(ctx)
+	defer sbx.Close(context.WithoutCancel(ctx))
+
+	meta, err := localTemplate.Metadata()
+	if err != nil {
+		return block.PrefetchData{}, err
+	}
+	if meta.Start != nil && meta.Start.ReadyCmd != "" {
+		for {
+			if err := sandboxtools.RunCommand(ctx, pb.proxy, sbx.Runtime.SandboxID, meta.Start.ReadyCmd, meta.Start.Context); err == nil {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return block.PrefetchData{}, fmt.Errorf("prefetch readiness: %w", ctx.Err())
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
 
 	prefetchData, err := sbx.MemoryPrefetchData(ctx)
 	if err != nil {
@@ -267,4 +305,13 @@ func (pb *OptimizeBuilder) updateMetadata(ctx context.Context, t metadata.Templa
 	pb.templateCache.Invalidate(t.Template.BuildID)
 
 	return nil
+}
+
+type rootfsRecordingTemplate struct {
+	sbxtemplate.Template
+	recorder *block.RootfsRecorder
+}
+
+func (t *rootfsRecordingTemplate) Rootfs() (block.ReadonlyDevice, error) {
+	return t.recorder, nil
 }

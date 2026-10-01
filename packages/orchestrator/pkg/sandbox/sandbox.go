@@ -1081,6 +1081,10 @@ func (f *Factory) ResumeSandbox(
 	// Identity shared by everything this resume logs on the sandbox's behalf:
 	// the uffd backend (and its serve loop) and the prefetcher.
 	sbxLogger := runtime.Logger()
+	meta, err := t.Metadata()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata: %w", err)
+	}
 
 	// Uffd initialization
 	fcUffdPath := sandboxFiles.SandboxUffdSocketPath()
@@ -1117,11 +1121,6 @@ func (f *Factory) ResumeSandbox(
 
 	go func() {
 		memfile, err := t.Memfile(ctx)
-		if err != nil {
-			return
-		}
-
-		meta, err := t.Metadata()
 		if err != nil {
 			return
 		}
@@ -1220,6 +1219,17 @@ func (f *Factory) ResumeSandbox(
 
 		telemetry.ReportEvent(ctx, "got template rootfs")
 
+		// Warm complete backing frames before the guest resumes, in parallel with
+		// memory initialization. Missing/invalid optimization data never replaces
+		// the demand-read path or extends the caller's restore deadline.
+		if meta.Prefetch != nil && meta.Prefetch.Rootfs != nil {
+			if device, ok := readonlyRootfs.(*template.Storage); ok {
+				if err := device.PrefetchRootfs(ctx, meta.Prefetch.Rootfs); err != nil {
+					sbxLogger.Warn(ctx, "rootfs prefetch incomplete; using demand reads", zap.Error(err))
+				}
+			}
+		}
+
 		overlay, err := rootfs.NewNBDProvider(
 			ctx,
 			readonlyRootfs,
@@ -1300,11 +1310,6 @@ func (f *Factory) ResumeSandbox(
 	rootfs, err := t.Rootfs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rootfs overlay: %w", err)
-	}
-
-	meta, err := t.Metadata()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
 	// The default user lives only in the restored envd's memory, so a resume that sends it

@@ -143,7 +143,8 @@ func (p *MemoryPrefetchMapping) Count() int {
 }
 
 type Prefetch struct {
-	Memory *MemoryPrefetchMapping `json:"memory"`
+	Memory *MemoryPrefetchMapping       `json:"memory"`
+	Rootfs *block.RootfsPrefetchMapping `json:"rootfs,omitempty"`
 }
 
 type Template struct {

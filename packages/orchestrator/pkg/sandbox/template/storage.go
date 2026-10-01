@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/e2b-dev/infra/packages/orchestrator/pkg/sandbox/block"
 	blockmetrics "github.com/e2b-dev/infra/packages/orchestrator/pkg/sandbox/block/metrics"
 	"github.com/e2b-dev/infra/packages/orchestrator/pkg/sandbox/build"
 	"github.com/e2b-dev/infra/packages/shared/pkg/logger"
@@ -175,4 +176,8 @@ func (d *Storage) DurableHeaderNow() (*header.Header, bool) {
 
 func (d *Storage) Close() error {
 	return nil
+}
+
+func (d *Storage) PrefetchRootfs(ctx context.Context, mapping *block.RootfsPrefetchMapping) error {
+	return d.source.PrefetchRootfs(ctx, mapping)
 }
